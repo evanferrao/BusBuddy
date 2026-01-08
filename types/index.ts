@@ -53,6 +53,18 @@ export interface UserProfile {
   preferredStopId?: string; // passengers only
 }
 
+// Full user profile document in Firestore users collection
+export interface UserProfileDoc {
+  uid: string;
+  email: string;
+  displayName: string;
+  role: UserRole;
+  busId?: string;
+  preferredStopId?: string;
+  createdAt: number;
+  updatedAt: number;
+}
+
 // Bus document in Firestore buses collection
 export interface Bus {
   busNumber: string;

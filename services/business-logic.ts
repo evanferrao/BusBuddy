@@ -7,7 +7,7 @@
  * - Helper functions for time calculations
  */
 
-import { StopColorState, Trip, WaitRequest, Absence, Stop, UserProfile } from '@/types';
+import { StopColorState, Trip, WaitRequest, Absence, Stop, UserProfileDoc } from '@/types';
 import { Timestamp } from 'firebase/firestore';
 
 // Time constants (in seconds)
@@ -79,7 +79,7 @@ export const computeStopColor = (
  */
 export const checkAllPassengersAbsent = (
   stopId: string,
-  passengersAtStop: UserProfile[],
+  passengersAtStop: UserProfileDoc[],
   absences: Absence[]
 ): boolean => {
   if (passengersAtStop.length === 0) {
@@ -100,7 +100,7 @@ export const checkAllPassengersAbsent = (
  * - Time elapsed since arrival <= 420 seconds (7 minutes)
  */
 export const canSendWaitRequest = (
-  passenger: UserProfile,
+  passenger: UserProfileDoc,
   trip: Trip,
   hasMarkedAbsence: boolean
 ): { allowed: boolean; reason?: string } => {

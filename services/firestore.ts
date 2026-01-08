@@ -6,7 +6,7 @@
  * - User role storage and retrieval
  */
 
-import { UserRole } from '@/types';
+import { UserRole, UserProfileDoc } from '@/types';
 import {
     collection,
     deleteDoc,
@@ -21,17 +21,6 @@ import {
 import { db } from './firebase-config';
 
 const usersCollection = collection(db, 'users');
-
-export interface UserProfileDoc {
-  uid: string;
-  email: string;
-  displayName: string;
-  role: UserRole;
-  busId?: string;
-  preferredStopId?: string;
-  createdAt: number;
-  updatedAt: number;
-}
 
 /**
  * Save or update user data

@@ -18,7 +18,8 @@ import * as BusesService from '@/services/buses';
 import * as FirestoreService from '@/services/firestore';
 import * as TripsService from '@/services/trips';
 import * as WaitRequestsService from '@/services/wait-requests';
-import { Bus, Location, StopColorState, Trip, UserProfile } from '@/types';
+import { Bus, Location, StopColorState, Trip, UserProfileDoc } from '@/types';
+import * as FirestoreService from '@/services/firestore';
 import React, { useEffect, useState } from 'react';
 import {
   Alert,
@@ -181,7 +182,7 @@ export default function NewPassengerDashboard() {
 
     // Validate
     const validation = BusinessLogic.canSendWaitRequest(
-      userProfile as UserProfile,
+      userProfile,
       activeTrip.data,
       hasMarkedAbsence
     );
@@ -326,7 +327,7 @@ export default function NewPassengerDashboard() {
 
   // Button enablement logic
   const canWait = activeTrip && BusinessLogic.canSendWaitRequest(
-    userProfile as UserProfile,
+    userProfile,
     activeTrip.data,
     hasMarkedAbsence
   ).allowed;
