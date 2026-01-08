@@ -176,11 +176,12 @@ export const getRemainingSeconds = (
 
 /**
  * Generate a trip ID based on date
+ * Uses UTC time to ensure consistent IDs across timezones
  */
 export const generateTripId = (busId: string, date?: Date): string => {
   const d = date || new Date();
-  const year = d.getFullYear();
-  const month = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
+  const year = d.getUTCFullYear();
+  const month = String(d.getUTCMonth() + 1).padStart(2, '0');
+  const day = String(d.getUTCDate()).padStart(2, '0');
   return `trip_${busId}_${year}_${month}_${day}`;
 };

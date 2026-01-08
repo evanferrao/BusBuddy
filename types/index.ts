@@ -1,5 +1,5 @@
 // User roles in the app
-export type UserRole = 'driver' | 'passenger' | null;
+export type UserRole = 'driver' | 'passenger' | 'student' | null; // 'student' is an alias for 'passenger' for backward compatibility
 
 // Authentication state
 export interface AuthState {

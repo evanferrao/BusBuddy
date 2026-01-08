@@ -52,6 +52,7 @@ export default function NewDriverDashboard() {
   
   // Real-time subscriptions
   const [tripUnsubscribe, setTripUnsubscribe] = useState<(() => void) | null>(null);
+  const [locationSubscription, setLocationSubscription] = useState<ExpoLocation.LocationSubscription | null>(null);
 
   const backgroundColor = isDark ? BUS_COLORS.background.dark : BUS_COLORS.background.light;
   const cardColor = isDark ? BUS_COLORS.card.dark : BUS_COLORS.card.light;
@@ -62,8 +63,12 @@ export default function NewDriverDashboard() {
   useEffect(() => {
     loadDriverData();
     return () => {
+      // Cleanup subscriptions
       if (tripUnsubscribe) {
         tripUnsubscribe();
+      }
+      if (locationSubscription) {
+        locationSubscription.remove();
       }
     };
   }, [userId]);
@@ -253,6 +258,12 @@ export default function NewDriverDashboard() {
           onPress: async () => {
             try {
               if (bus && activeTrip) {
+                // Clean up location tracking
+                if (locationSubscription) {
+                  locationSubscription.remove();
+                  setLocationSubscription(null);
+                }
+
                 // Update bus active trip to null
                 await BusesService.updateBusActiveTrip(bus.id, null);
 
@@ -280,6 +291,11 @@ export default function NewDriverDashboard() {
   };
 
   const startLocationTracking = async (tripId: string) => {
+    // Clean up any existing subscription first
+    if (locationSubscription) {
+      locationSubscription.remove();
+    }
+
     // Start continuous location tracking
     const subscription = await ExpoLocation.watchPositionAsync(
       {
@@ -304,7 +320,7 @@ export default function NewDriverDashboard() {
     );
 
     // Store subscription for cleanup
-    // Note: In a production app, you'd want to store this and clean it up properly
+    setLocationSubscription(subscription);
   };
 
   const handleArriveAtStop = async (stopId: string) => {

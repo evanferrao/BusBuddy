@@ -9,6 +9,8 @@ service cloud.firestore {
     }
     
     // Helper function to get user role from users collection
+    // Note: This performs a document read on each request. For production,
+    // consider using Firebase Custom Claims or caching for better performance.
     function getUserRole() {
       return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role;
     }
