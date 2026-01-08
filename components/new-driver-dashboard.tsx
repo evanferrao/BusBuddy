@@ -290,14 +290,14 @@ export default function NewDriverDashboard() {
     );
   };
 
-  const startLocationTracking = async (tripId: string) => {
+  const startLocationTracking = (tripId: string) => {
     // Clean up any existing subscription first
     if (locationSubscription) {
       locationSubscription.remove();
     }
 
     // Start continuous location tracking
-    const subscription = await ExpoLocation.watchPositionAsync(
+    ExpoLocation.watchPositionAsync(
       {
         accuracy: ExpoLocation.Accuracy.High,
         timeInterval: 5000, // Update every 5 seconds
@@ -317,10 +317,12 @@ export default function NewDriverDashboard() {
           console.error('Error updating trip location:', error);
         }
       }
-    );
-
-    // Store subscription for cleanup
-    setLocationSubscription(subscription);
+    ).then((subscription) => {
+      // Store subscription for cleanup
+      setLocationSubscription(subscription);
+    }).catch((error) => {
+      console.error('Error starting location tracking:', error);
+    });
   };
 
   const handleArriveAtStop = async (stopId: string) => {

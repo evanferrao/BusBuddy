@@ -142,35 +142,33 @@ export default function NewPassengerDashboard() {
       const waitRequest = await WaitRequestsService.getWaitRequest(activeTrip.id, userId!);
       setHasWaitRequest(!!waitRequest);
 
-      // Compute stop color for passenger's stop
-      if (userProfile.preferredStopId) {
-        const passengersAtStop = await FirestoreService.getPassengersAtStop(
-          userProfile.busId!,
-          userProfile.preferredStopId
-        );
-        const absences = await AbsencesService.getAbsencesForStop(
-          activeTrip.id,
-          userProfile.preferredStopId
-        );
-        const waitRequests = await WaitRequestsService.getWaitRequestsForStop(
-          activeTrip.id,
-          userProfile.preferredStopId
-        );
+      // Compute stop color for passenger's stop (preferredStopId is guaranteed to exist here)
+      const passengersAtStop = await FirestoreService.getPassengersAtStop(
+        userProfile.busId!,
+        userProfile.preferredStopId
+      );
+      const absences = await AbsencesService.getAbsencesForStop(
+        activeTrip.id,
+        userProfile.preferredStopId
+      );
+      const waitRequests = await WaitRequestsService.getWaitRequestsForStop(
+        activeTrip.id,
+        userProfile.preferredStopId
+      );
 
-        const allAbsent = BusinessLogic.checkAllPassengersAbsent(
-          userProfile.preferredStopId,
-          passengersAtStop,
-          absences
-        );
+      const allAbsent = BusinessLogic.checkAllPassengersAbsent(
+        userProfile.preferredStopId,
+        passengersAtStop,
+        absences
+      );
 
-        const color = BusinessLogic.computeStopColor(
-          userProfile.preferredStopId,
-          activeTrip.data,
-          allAbsent,
-          waitRequests.length > 0
-        );
-        setStopColor(color);
-      }
+      const color = BusinessLogic.computeStopColor(
+        userProfile.preferredStopId,
+        activeTrip.data,
+        allAbsent,
+        waitRequests.length > 0
+      );
+      setStopColor(color);
     } catch (error) {
       console.error('Error updating passenger state:', error);
     }

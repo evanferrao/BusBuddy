@@ -87,7 +87,8 @@ export const checkAllPassengersAbsent = (
   }
 
   const absentCount = absences.filter(a => a.stopId === stopId).length;
-  return absentCount > 0 && absentCount === passengersAtStop.length;
+  // If absentCount equals total passengers, all are absent (and there's at least one passenger)
+  return absentCount === passengersAtStop.length;
 };
 
 /**
