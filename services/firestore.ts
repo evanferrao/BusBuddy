@@ -6,27 +6,21 @@
  * - User role storage and retrieval
  */
 
-import { UserRole } from '@/types';
+import { UserRole, UserProfileDoc } from '@/types';
 import {
     collection,
     deleteDoc,
     doc,
     getDoc,
     setDoc,
-    updateDoc
+    updateDoc,
+    query,
+    where,
+    getDocs
 } from 'firebase/firestore';
 import { db } from './firebase-config';
 
 const usersCollection = collection(db, 'users');
-
-export interface UserProfile {
-  uid: string;
-  email: string;
-  displayName: string;
-  role: UserRole;
-  createdAt: number;
-  updatedAt: number;
-}
 
 /**
  * Save or update user data
@@ -45,12 +39,12 @@ export const saveUserData = async (userId: string, data: object) => {
 /**
  * Get user data by ID
  */
-export const getUserData = async (userId: string): Promise<UserProfile | null> => {
+export const getUserData = async (userId: string): Promise<UserProfileDoc | null> => {
   try {
     const userRef = doc(db, 'users', userId);
     const userDoc = await getDoc(userRef);
     if (userDoc.exists()) {
-      return userDoc.data() as UserProfile;
+      return userDoc.data() as UserProfileDoc;
     } else {
       console.log('No such user!');
       return null;
@@ -68,14 +62,18 @@ export const createUserProfile = async (
   uid: string, 
   email: string, 
   displayName: string, 
-  role: UserRole
-): Promise<UserProfile> => {
+  role: UserRole,
+  busId?: string,
+  preferredStopId?: string
+): Promise<UserProfileDoc> => {
   const now = Date.now();
-  const userProfile: UserProfile = {
+  const userProfile: UserProfileDoc = {
     uid,
     email,
     displayName,
     role,
+    busId,
+    preferredStopId,
     createdAt: now,
     updatedAt: now,
   };
@@ -148,6 +146,68 @@ export const deleteUserProfile = async (userId: string): Promise<void> => {
     console.log('User profile deleted');
   } catch (error) {
     console.error('Error deleting user profile:', error);
+    throw error;
+  }
+};
+
+/**
+ * Update user bus and stop assignments
+ */
+export const updateUserAssignments = async (
+  userId: string,
+  busId: string,
+  preferredStopId?: string
+): Promise<void> => {
+  try {
+    const userRef = doc(db, 'users', userId);
+    const updates: Partial<UserProfileDoc> = {
+      busId,
+      updatedAt: Date.now(),
+    };
+    if (preferredStopId) {
+      updates.preferredStopId = preferredStopId;
+    }
+    await updateDoc(userRef, updates);
+    console.log('User assignments updated');
+  } catch (error) {
+    console.error('Error updating user assignments:', error);
+    throw error;
+  }
+};
+
+/**
+ * Get all passengers for a bus
+ */
+export const getPassengersForBus = async (busId: string): Promise<UserProfileDoc[]> => {
+  try {
+    const usersRef = collection(db, 'users');
+    const q = query(usersRef, where('busId', '==', busId), where('role', '==', 'passenger'));
+    const querySnapshot = await getDocs(q);
+    
+    return querySnapshot.docs.map(doc => doc.data() as UserProfileDoc);
+  } catch (error) {
+    console.error('Error fetching passengers for bus:', error);
+    throw error;
+  }
+};
+
+/**
+ * Get all passengers at a specific stop
+ */
+export const getPassengersAtStop = async (busId: string, stopId: string): Promise<UserProfileDoc[]> => {
+  try {
+    const usersRef = collection(db, 'users');
+    const q = query(
+      usersRef,
+      where('busId', '==', busId),
+      where('role', '==', 'passenger'),
+      where('preferredStopId', '==', stopId)
+    );
+    const querySnapshot = await getDocs(q);
+    
+    return querySnapshot.docs.map(doc => doc.data() as UserProfileDoc);
+  } catch (error) {
+    console.error('Error fetching passengers at stop:', error);
     throw error;
   }
 };

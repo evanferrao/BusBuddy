@@ -2,15 +2,15 @@
  * Driver Home - Dashboard
  * 
  * Main screen for drivers showing:
- * - Location tracking toggle
- * - Current speed and location info
- * - Student notifications
- * - List of students on route
+ * - Trip lifecycle management
+ * - Location tracking
+ * - Stop status with color indicators
+ * - Wait request counts
  */
 
-import DriverDashboard from '@/components/driver-dashboard';
+import NewDriverDashboard from '@/components/new-driver-dashboard';
 import React from 'react';
 
 export default function DriverHomeScreen() {
-  return <DriverDashboard />;
+  return <NewDriverDashboard />;
 }
