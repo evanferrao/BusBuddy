@@ -1,6 +1,21 @@
 // User roles in the app
 export type UserRole = 'driver' | 'student' | null;
 
+// Authentication state
+export interface AuthState {
+  isAuthenticated: boolean;
+  isLoading: boolean;
+  user: AuthUserData | null;
+}
+
+// Authenticated user data
+export interface AuthUserData {
+  uid: string;
+  email: string | null;
+  displayName: string | null;
+  role: UserRole;
+}
+
 // Location data structure
 export interface Location {
   latitude: number;
