@@ -1,5 +1,5 @@
 // User roles in the app
-export type UserRole = 'driver' | 'student' | null;
+export type UserRole = 'driver' | 'passenger' | null;
 
 // Authentication state
 export interface AuthState {
@@ -23,6 +23,105 @@ export interface Location {
   timestamp: number;
   speed?: number | null; // in m/s
   heading?: number | null; // direction in degrees
+}
+
+// =====================================================
+// Firestore Data Model Types (from specification)
+// =====================================================
+
+/**
+ * User profile stored in Firestore users/{uid}
+ */
+export interface FirestoreUser {
+  role: 'driver' | 'passenger';
+  busId: string;
+  preferredStopId?: string; // passengers only
+}
+
+/**
+ * Bus stop definition (static route data)
+ */
+export interface FirestoreStop {
+  stopId: string;
+  name: string;
+  lat: number;
+  lng: number;
+  scheduledTime: string; // e.g. "07:45"
+}
+
+/**
+ * Bus document stored in Firestore buses/{busId}
+ */
+export interface FirestoreBus {
+  busNumber: string;
+  driverId: string;
+  activeTripId: string | null;
+  stops: FirestoreStop[];
+}
+
+/**
+ * Trip status enum
+ */
+export type TripStatus = 'IN_TRANSIT' | 'AT_STOP';
+
+/**
+ * Trip location
+ */
+export interface TripLocation {
+  lat: number;
+  lng: number;
+}
+
+/**
+ * Trip document stored in Firestore trips/{tripId}
+ * This is the single source of truth for real-time state
+ */
+export interface FirestoreTrip {
+  busId: string;
+  driverId: string;
+  startedAt: number; // Timestamp in milliseconds
+  currentStopId: string | null;
+  stopArrivedAt: number | null; // Timestamp in milliseconds
+  status: TripStatus;
+  location: TripLocation;
+}
+
+/**
+ * Wait request stored in trips/{tripId}/waitRequests/{uid}
+ */
+export interface WaitRequest {
+  passengerId: string;
+  stopId: string;
+  requestedAt: number; // Timestamp in milliseconds
+}
+
+/**
+ * Absence record stored in trips/{tripId}/absences/{uid}
+ */
+export interface Absence {
+  passengerId: string;
+  stopId: string;
+  markedAt: number; // Timestamp in milliseconds
+}
+
+/**
+ * Stop color state derived on client-side
+ * No colors are stored in the database
+ */
+export type StopColor = 'GREY' | 'RED' | 'YELLOW' | 'GREEN';
+
+/**
+ * Stop status for display in driver UI
+ */
+export interface StopStatus {
+  stopId: string;
+  name: string;
+  color: StopColor;
+  elapsedSeconds: number;
+  waitRequestCount: number;
+  allPassengersAbsent: boolean;
+  totalPassengers: number;
+  absentCount: number;
 }
 
 // Student status for a given trip

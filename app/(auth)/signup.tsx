@@ -230,13 +230,13 @@ export default function SignUpScreen() {
                 style={[
                   styles.roleCard,
                   { backgroundColor: cardColor },
-                  selectedRole === 'student' && styles.roleCardSelected,
+                  selectedRole === 'passenger' && styles.roleCardSelected,
                 ]}
-                onPress={() => setSelectedRole('student')}
+                onPress={() => setSelectedRole('passenger')}
               >
                 <Text style={styles.roleEmoji}>🎒</Text>
                 <Text style={[styles.roleTitle, { color: textColor }]}>Passenger</Text>
-                {selectedRole === 'student' && (
+                {selectedRole === 'passenger' && (
                   <View style={styles.checkmark}>
                     <IconSymbol
                       name="checkmark.circle.fill"
