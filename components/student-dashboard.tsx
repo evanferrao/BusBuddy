@@ -14,7 +14,7 @@ import {
 } from '@/constants/bus-tracker';
 import { useApp } from '@/context/app-context';
 import { useColorScheme } from '@/hooks/use-color-scheme';
-import { calculateDistance, formatDistance, formatETA, getBusStops, getEstimatedArrival } from '@/services/mock-data';
+import { calculateDistance, formatDistance, formatETA, getEstimatedArrival, getStopById } from '@/services/mock-data';
 import { NotificationType } from '@/types';
 import React, { useEffect, useState } from 'react';
 import {
@@ -35,13 +35,26 @@ const MY_STOP = {
   longitude: 75.7873,
 };
 
+const STOP_COLORS = {
+  GREY: '#8E8E93',
+  RED: BUS_COLORS.danger,
+  YELLOW: BUS_COLORS.warning,
+  GREEN: BUS_COLORS.success,
+};
+
 export default function StudentDashboard() {
   const {
     userName,
     busLocation,
     isDriverActive,
-    sendNotification,
     refreshBusLocation,
+    requestWaitForStop,
+    markAbsentForTrip,
+    passengerCanRequestWait,
+    hasMarkedAbsence,
+    currentStopStatus,
+    passengerPreferredStopId,
+    passengerPreferredStopName,
   } = useApp();
   
   const colorScheme = useColorScheme();
@@ -49,6 +62,17 @@ export default function StudentDashboard() {
   const [refreshing, setRefreshing] = useState(false);
   const [lastSentNotification, setLastSentNotification] = useState<NotificationType | null>(null);
   const [pulseAnim] = useState(new Animated.Value(1));
+  const preferredStop = passengerPreferredStopId ? getStopById(passengerPreferredStopId) : null;
+  const stopLocation = preferredStop?.location || {
+    latitude: MY_STOP.latitude,
+    longitude: MY_STOP.longitude,
+    timestamp: Date.now(),
+  };
+  const stopName = passengerPreferredStopName || preferredStop?.name || MY_STOP.name;
+  const stopColor = (currentStopStatus?.color || 'GREEN') as keyof typeof STOP_COLORS;
+  const waitRequestCount = currentStopStatus?.waitRequestCount || 0;
+  const countdown = currentStopStatus?.windowRemainingSeconds ?? null;
+  const allAbsent = currentStopStatus?.allPassengersAbsent || false;
 
   const backgroundColor = isDark ? BUS_COLORS.background.dark : BUS_COLORS.background.light;
   const cardColor = isDark ? BUS_COLORS.card.dark : BUS_COLORS.card.light;
@@ -82,15 +106,15 @@ export default function StudentDashboard() {
     ? calculateDistance(
         busLocation.latitude,
         busLocation.longitude,
-        MY_STOP.latitude,
-        MY_STOP.longitude
+        stopLocation.latitude,
+        stopLocation.longitude
       )
     : null;
 
   const eta = busLocation
     ? getEstimatedArrival(
         busLocation,
-        { ...MY_STOP, timestamp: Date.now() }
+        stopLocation
       )
     : null;
 
@@ -104,25 +128,25 @@ export default function StudentDashboard() {
     setRefreshing(false);
   };
 
-  const handleSendNotification = (type: NotificationType) => {
-    Alert.alert(
-      NOTIFICATION_CONFIG[type].label,
-      `Send "${NOTIFICATION_CONFIG[type].description}" to the driver?`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Send',
-          onPress: () => {
-            sendNotification(type);
-            setLastSentNotification(type);
-            Alert.alert('Sent!', 'Your notification has been sent to the driver.');
-          },
-        },
-      ]
-    );
+  const handleWaitRequest = () => {
+    const result = requestWaitForStop();
+    if (!result.success) {
+      Alert.alert('Cannot request wait', result.reason || 'Please try again later.');
+      return;
+    }
+    setLastSentNotification('wait');
+    Alert.alert('Sent!', 'Your wait request has been sent to the driver.');
   };
 
-  const busStops = getBusStops();
+  const handleMarkAbsent = () => {
+    const result = markAbsentForTrip();
+    if (!result.success) {
+      Alert.alert('Cannot mark absent', result.reason || 'Please try again later.');
+      return;
+    }
+    setLastSentNotification('skip');
+    Alert.alert('Marked absent', 'You have been marked absent for this trip.');
+  };
 
   return (
     <ScrollView
@@ -137,9 +161,36 @@ export default function StudentDashboard() {
         <Text style={[styles.greeting, { color: secondaryTextColor }]}>Hello,</Text>
         <Text style={[styles.userName, { color: textColor }]}>{userName || 'Student'}</Text>
         <Text style={[styles.stopInfo, { color: secondaryTextColor }]}>
-          📍 Your stop: {MY_STOP.name}
+          📍 Your stop: {stopName}
         </Text>
       </View>
+
+      {currentStopStatus && (
+        <View style={[styles.stopStatusCard, { backgroundColor: cardColor }]}>
+          <View style={styles.stopStatusHeader}>
+            <View style={[styles.stopColorDot, { backgroundColor: STOP_COLORS[stopColor] }]} />
+            <Text style={[styles.stopStatusTitle, { color: textColor }]}>
+              Current stop: {currentStopStatus.name}
+            </Text>
+          </View>
+          <Text style={[styles.stopStatusText, { color: secondaryTextColor }]}>
+            State: {stopColor}
+          </Text>
+          {countdown !== null && (
+            <Text style={[styles.stopStatusText, { color: secondaryTextColor }]}>
+              Waiting window: {countdown}s remaining
+            </Text>
+          )}
+          <Text style={[styles.stopStatusText, { color: secondaryTextColor }]}>
+            Wait requests: {waitRequestCount}
+          </Text>
+          {allAbsent && (
+            <Text style={[styles.stopStatusText, { color: secondaryTextColor }]}>
+              All passengers at this stop are absent.
+            </Text>
+          )}
+        </View>
+      )}
 
       {/* Bus Status Card */}
       <View
@@ -223,18 +274,20 @@ export default function StudentDashboard() {
             description="I'm coming!"
             color={NOTIFICATION_CONFIG.wait.color}
             isActive={lastSentNotification === 'wait'}
-            onPress={() => handleSendNotification('wait')}
+            onPress={handleWaitRequest}
+            disabled={!passengerCanRequestWait}
             cardColor={cardColor}
             textColor={textColor}
           />
           <ActionButton
             type="skip"
             emoji="❌"
-            label="Skip Today"
+            label="Absent Today"
             description="Not coming"
             color={NOTIFICATION_CONFIG.skip.color}
             isActive={lastSentNotification === 'skip'}
-            onPress={() => handleSendNotification('skip')}
+            onPress={handleMarkAbsent}
+            disabled={hasMarkedAbsence}
             cardColor={cardColor}
             textColor={textColor}
           />
@@ -263,6 +316,7 @@ function ActionButton({
   onPress,
   cardColor,
   textColor,
+  disabled,
 }: {
   type: NotificationType;
   emoji: string;
@@ -273,6 +327,7 @@ function ActionButton({
   onPress: () => void;
   cardColor: string;
   textColor: string;
+  disabled?: boolean;
 }) {
   return (
     <TouchableOpacity
@@ -280,8 +335,10 @@ function ActionButton({
         styles.actionButton,
         { backgroundColor: cardColor },
         isActive && { borderColor: color, borderWidth: 2 },
+        disabled && { opacity: 0.5 },
       ]}
       onPress={onPress}
+      disabled={disabled}
       activeOpacity={0.8}
     >
       <Text style={styles.actionEmoji}>{emoji}</Text>
@@ -318,6 +375,30 @@ const styles = StyleSheet.create({
   },
   stopInfo: {
     fontSize: 14,
+  },
+  stopStatusCard: {
+    borderRadius: 16,
+    padding: 16,
+    marginBottom: 16,
+  },
+  stopStatusHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 6,
+  },
+  stopColorDot: {
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    marginRight: 8,
+  },
+  stopStatusTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  stopStatusText: {
+    fontSize: 12,
+    marginBottom: 4,
   },
   statusCard: {
     borderRadius: 24,

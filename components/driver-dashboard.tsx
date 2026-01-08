@@ -25,6 +25,13 @@ import {
     View,
 } from 'react-native';
 
+const STOP_COLOR_MAP = {
+  GREY: '#8E8E93',
+  RED: BUS_COLORS.danger,
+  YELLOW: BUS_COLORS.warning,
+  GREEN: BUS_COLORS.success,
+};
+
 export default function DriverDashboard() {
   const {
     userName,
@@ -37,6 +44,9 @@ export default function DriverDashboard() {
     students,
     markNotificationRead,
     clearAllNotifications,
+    stopStatuses,
+    currentStopStatus,
+    advanceToNextStop,
   } = useApp();
   
   const colorScheme = useColorScheme();
@@ -148,6 +158,57 @@ export default function DriverDashboard() {
             Start sharing to let students track your bus
           </Text>
         )}
+      </View>
+
+      {currentStopStatus && (
+        <View style={styles.section}>
+          <Text style={[styles.sectionTitle, { color: textColor }]}>Current Stop</Text>
+          <View style={[styles.stopStatusCard, { backgroundColor: cardColor }]}>
+            <View style={styles.stopStatusHeader}>
+              <View style={[styles.stopColorDot, { backgroundColor: STOP_COLOR_MAP[currentStopStatus.color] }]} />
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.stopStatusTitle, { color: textColor }]}>{currentStopStatus.name}</Text>
+                <Text style={[styles.stopStatusSubtitle, { color: secondaryTextColor }]}>
+                  State: {currentStopStatus.color}
+                </Text>
+              </View>
+              <TouchableOpacity style={[styles.nextStopButton, { backgroundColor: BUS_COLORS.primary }]} onPress={advanceToNextStop}>
+                <Text style={styles.nextStopButtonText}>Next Stop</Text>
+              </TouchableOpacity>
+            </View>
+            {currentStopStatus.windowRemainingSeconds !== null && (
+              <Text style={[styles.stopStatusInfo, { color: secondaryTextColor }]}>
+                {currentStopStatus.color === 'RED' ? 'Standard wait' : 'Extended wait'}: {currentStopStatus.windowRemainingSeconds}s left
+              </Text>
+            )}
+            <Text style={[styles.stopStatusInfo, { color: secondaryTextColor }]}>
+              Wait requests: {currentStopStatus.waitRequestCount}
+            </Text>
+            {currentStopStatus.allPassengersAbsent && (
+              <Text style={[styles.stopStatusInfo, { color: secondaryTextColor }]}>
+                All passengers are absent at this stop. You may skip it.
+              </Text>
+            )}
+          </View>
+        </View>
+      )}
+
+      <View style={styles.section}>
+        <Text style={[styles.sectionTitle, { color: textColor }]}>Route Stops</Text>
+        {stopStatuses.map((status) => (
+          <View key={status.stopId} style={[styles.stopRow, { backgroundColor: cardColor }]}>
+            <View style={[styles.stopColorDot, { backgroundColor: STOP_COLOR_MAP[status.color] }]} />
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.stopName, { color: textColor }]}>{status.name}</Text>
+              <Text style={[styles.stopMeta, { color: secondaryTextColor }]}>
+                {status.color} • Wait requests: {status.waitRequestCount}
+              </Text>
+            </View>
+            {status.allPassengersAbsent && (
+              <Text style={[styles.stopMeta, { color: secondaryTextColor }]}>All absent</Text>
+            )}
+          </View>
+        ))}
       </View>
 
       {/* Notifications Section */}
@@ -373,6 +434,56 @@ const styles = StyleSheet.create({
   trackingHint: {
     marginTop: 12,
     fontSize: 14,
+  },
+  stopStatusCard: {
+    borderRadius: 16,
+    padding: 16,
+  },
+  stopStatusHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 8,
+    gap: 8,
+  },
+  stopColorDot: {
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+  },
+  stopStatusTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+  },
+  stopStatusSubtitle: {
+    fontSize: 12,
+  },
+  stopStatusInfo: {
+    fontSize: 12,
+    marginBottom: 4,
+  },
+  nextStopButton: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 10,
+  },
+  nextStopButtonText: {
+    color: '#fff',
+    fontWeight: '600',
+  },
+  stopRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderRadius: 12,
+    padding: 12,
+    marginBottom: 8,
+    gap: 10,
+  },
+  stopName: {
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  stopMeta: {
+    fontSize: 12,
   },
   section: {
     marginBottom: 24,
