@@ -160,7 +160,7 @@ export const updateUserAssignments = async (
 ): Promise<void> => {
   try {
     const userRef = doc(db, 'users', userId);
-    const updates: any = {
+    const updates: Partial<UserProfileDoc> = {
       busId,
       updatedAt: Date.now(),
     };

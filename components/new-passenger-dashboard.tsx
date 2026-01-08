@@ -19,7 +19,6 @@ import * as FirestoreService from '@/services/firestore';
 import * as TripsService from '@/services/trips';
 import * as WaitRequestsService from '@/services/wait-requests';
 import { Bus, Location, StopColorState, Trip, UserProfileDoc } from '@/types';
-import * as FirestoreService from '@/services/firestore';
 import React, { useEffect, useState } from 'react';
 import {
   Alert,
