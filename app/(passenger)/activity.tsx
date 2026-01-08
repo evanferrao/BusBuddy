@@ -7,6 +7,7 @@
 import { BUS_COLORS, NOTIFICATION_CONFIG } from '@/constants/bus-tracker';
 import { useApp } from '@/context/app-context';
 import { useColorScheme } from '@/hooks/use-color-scheme';
+import { getBusStops } from '@/services/mock-data';
 import { StudentNotification } from '@/types';
 import React from 'react';
 import {
@@ -105,6 +106,39 @@ export default function PassengerActivityScreen() {
           ))}
         </View>
       )}
+
+      {/* Route Stops */}
+      <View style={styles.routeSection}>
+        <Text style={[styles.routeTitle, { color: textColor }]}>
+          Route Stops
+        </Text>
+
+        <View style={[styles.routeCard, { backgroundColor: cardColor }]}>
+          {getBusStops().map((stop, index, arr) => (
+            <View key={stop.id} style={styles.stopItem}>
+              <View style={styles.stopIndicator}>
+                <View
+                  style={[
+                    styles.stopDot,
+                    { backgroundColor: secondaryTextColor },
+                  ]}
+                />
+                {index < arr.length - 1 && (
+                  <View style={[styles.stopLine, { backgroundColor: secondaryTextColor }]} />
+                )}
+              </View>
+              <View style={styles.stopInfo}>
+                <Text style={[styles.stopName, { color: textColor }]}>
+                  {stop.name}
+                </Text>
+                <Text style={[styles.stopStudents, { color: secondaryTextColor }]}>
+                  {stop.students.length} student{stop.students.length !== 1 ? 's' : ''}
+                </Text>
+              </View>
+            </View>
+          ))}
+        </View>
+      </View>
 
       {/* Info Card */}
       <View style={[styles.infoCard, { backgroundColor: cardColor }]}>
@@ -286,6 +320,47 @@ const styles = StyleSheet.create({
     width: 8,
     height: 8,
     borderRadius: 4,
+  },
+  routeSection: {
+    marginTop: 24,
+  },
+  routeTitle: {
+    fontSize: 20,
+    fontWeight: '600',
+    marginBottom: 12,
+  },
+  routeCard: {
+    borderRadius: 16,
+    padding: 16,
+  },
+  stopItem: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+  },
+  stopIndicator: {
+    alignItems: 'center',
+    marginRight: 12,
+  },
+  stopDot: {
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+  },
+  stopLine: {
+    width: 2,
+    height: 36,
+    marginTop: 4,
+  },
+  stopInfo: {
+    flex: 1,
+    paddingBottom: 16,
+  },
+  stopName: {
+    fontSize: 16,
+  },
+  stopStudents: {
+    fontSize: 12,
+    marginTop: 2,
   },
   infoCard: {
     flexDirection: 'row',

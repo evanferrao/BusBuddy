@@ -111,15 +111,6 @@ export default function SignInScreen() {
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
       >
-        {/* Back Button */}
-        <TouchableOpacity
-          style={styles.backButton}
-          onPress={() => router.back()}
-        >
-          <IconSymbol name="chevron.left" size={24} color={BUS_COLORS.primary} />
-          <Text style={[styles.backText, { color: BUS_COLORS.primary }]}>Back</Text>
-        </TouchableOpacity>
-
         {/* Header */}
         <View style={styles.header}>
           <Text style={styles.busIcon}>🚌</Text>

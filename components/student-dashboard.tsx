@@ -238,75 +238,6 @@ export default function StudentDashboard() {
             cardColor={cardColor}
             textColor={textColor}
           />
-          <ActionButton
-            type="running_late"
-            emoji="🏃"
-            label="Running Late"
-            description="Few mins"
-            color={NOTIFICATION_CONFIG.running_late.color}
-            isActive={lastSentNotification === 'running_late'}
-            onPress={() => handleSendNotification('running_late')}
-            cardColor={cardColor}
-            textColor={textColor}
-          />
-          <ActionButton
-            type="ready"
-            emoji="✅"
-            label="Ready!"
-            description="At the stop"
-            color={NOTIFICATION_CONFIG.ready.color}
-            isActive={lastSentNotification === 'ready'}
-            onPress={() => handleSendNotification('ready')}
-            cardColor={cardColor}
-            textColor={textColor}
-          />
-        </View>
-      </View>
-
-      {/* Route Stops */}
-      <View style={styles.section}>
-        <Text style={[styles.sectionTitle, { color: textColor }]}>
-          Route Stops
-        </Text>
-
-        <View style={[styles.routeCard, { backgroundColor: cardColor }]}>
-          {busStops.map((stop, index) => (
-            <View key={stop.id} style={styles.stopItem}>
-              <View style={styles.stopIndicator}>
-                <View
-                  style={[
-                    styles.stopDot,
-                    {
-                      backgroundColor:
-                        stop.name === MY_STOP.name
-                          ? BUS_COLORS.primary
-                          : secondaryTextColor,
-                    },
-                  ]}
-                />
-                {index < busStops.length - 1 && (
-                  <View style={[styles.stopLine, { backgroundColor: secondaryTextColor }]} />
-                )}
-              </View>
-              <View style={styles.stopInfo2}>
-                <Text
-                  style={[
-                    styles.stopName,
-                    {
-                      color: stop.name === MY_STOP.name ? BUS_COLORS.primary : textColor,
-                      fontWeight: stop.name === MY_STOP.name ? 'bold' : 'normal',
-                    },
-                  ]}
-                >
-                  {stop.name}
-                  {stop.name === MY_STOP.name && ' (Your Stop)'}
-                </Text>
-                <Text style={[styles.stopStudents, { color: secondaryTextColor }]}>
-                  {stop.students.length} student{stop.students.length !== 1 ? 's' : ''}
-                </Text>
-              </View>
-            </View>
-          ))}
         </View>
       </View>
 
@@ -314,7 +245,7 @@ export default function StudentDashboard() {
       <View style={[styles.tipCard, { backgroundColor: cardColor }]}>
         <Text style={styles.tipEmoji}>💡</Text>
         <Text style={[styles.tipText, { color: secondaryTextColor }]}>
-          Tip: Send a "Ready" notification when you're at the stop so the driver knows you're there!
+          Tip: Use "Wait for Me" if you're running late, or "Skip Today" if you won't be taking the bus!
         </Text>
       </View>
     </ScrollView>

@@ -81,15 +81,6 @@ export default function WelcomeScreen() {
         >
           <Text style={styles.primaryButtonText}>Get Started</Text>
         </TouchableOpacity>
-
-        <TouchableOpacity
-          style={styles.secondaryButton}
-          onPress={() => router.push('/(auth)/signin')}
-        >
-          <Text style={[styles.secondaryButtonText, { color: BUS_COLORS.primary }]}>
-            Already have an account? Sign In
-          </Text>
-        </TouchableOpacity>
       </View>
     </View>
   );
