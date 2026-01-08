@@ -10,7 +10,7 @@ import * as FirestoreService from '@/services/firestore';
 import * as LocationService from '@/services/location';
 import * as MockData from '@/services/mock-data';
 import * as StorageService from '@/services/storage';
-import { AuthUserData, Location, Student, StudentNotification, UserRole } from '@/types';
+import { ActionResult, AuthUserData, Location, StopStatus, Student, StudentNotification, TripState, UserRole } from '@/types';
 import React, { createContext, ReactNode, useCallback, useContext, useEffect, useState } from 'react';
 
 interface AppContextType {
@@ -28,13 +28,20 @@ interface AppContextType {
   isTracking: boolean;
   currentLocation: Location | null;
   
-  // Bus location (student view)
-  busLocation: Location | null;
-  isDriverActive: boolean;
-  
-  // Notifications
-  notifications: StudentNotification[];
-  unreadCount: number;
+   // Bus location (student view)
+   busLocation: Location | null;
+   isDriverActive: boolean;
+  activeTrip: TripState | null;
+  stopStatuses: StopStatus[];
+  currentStopStatus: StopStatus | null;
+  passengerPreferredStopId: string | null;
+  passengerPreferredStopName: string | null;
+  passengerCanRequestWait: boolean;
+  hasMarkedAbsence: boolean;
+   
+   // Notifications
+   notifications: StudentNotification[];
+   unreadCount: number;
   
   // Students list (for driver)
   students: Student[];
@@ -45,14 +52,17 @@ interface AppContextType {
   signOut: () => Promise<void>;
   
   // Actions
-  setRole: (role: UserRole, name: string) => Promise<void>;
-  startTracking: () => Promise<boolean>;
-  stopTracking: () => void;
-  sendNotification: (type: 'wait' | 'skip' | 'running_late' | 'ready', message?: string) => void;
-  markNotificationRead: (id: string) => void;
-  clearAllNotifications: () => void;
-  refreshBusLocation: () => void;
-  logout: () => Promise<void>;
+   setRole: (role: UserRole, name: string) => Promise<void>;
+   startTracking: () => Promise<boolean>;
+   stopTracking: () => void;
+  requestWaitForStop: () => ActionResult;
+  markAbsentForTrip: () => ActionResult;
+  advanceToNextStop: () => void;
+   sendNotification: (type: 'wait' | 'skip' | 'running_late' | 'ready', message?: string) => void;
+   markNotificationRead: (id: string) => void;
+   clearAllNotifications: () => void;
+   refreshBusLocation: () => void;
+   logout: () => Promise<void>;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -73,6 +83,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [currentLocation, setCurrentLocation] = useState<Location | null>(null);
   const [busLocation, setBusLocation] = useState<Location | null>(null);
   const [isDriverActive, setIsDriverActive] = useState(false);
+  const [activeTrip, setActiveTrip] = useState<TripState | null>(MockData.getActiveTrip());
+  const [stopStatuses, setStopStatuses] = useState<StopStatus[]>(MockData.getStopStatuses());
+  const [currentStopStatus, setCurrentStopStatus] = useState<StopStatus | null>(MockData.getCurrentStopStatus());
+  const [passengerProfile, setPassengerProfile] = useState<Student | null>(null);
   
   // Notifications
   const [notifications, setNotifications] = useState<StudentNotification[]>([]);
@@ -150,6 +164,30 @@ export function AppProvider({ children }: { children: ReactNode }) {
       return () => clearInterval(interval);
     }
   }, [userRole]);
+
+  useEffect(() => {
+    if (userRole === 'student') {
+      const profile = MockData.ensurePassengerProfile(userId || 'student-1', userName || undefined);
+      setPassengerProfile(profile);
+    } else {
+      setPassengerProfile(null);
+    }
+  }, [userRole, userId, userName]);
+
+  const refreshTripState = useCallback(() => {
+    const tripState = MockData.getActiveTrip();
+    setActiveTrip(tripState);
+    setStopStatuses(MockData.getStopStatuses());
+    setCurrentStopStatus(MockData.getCurrentStopStatus());
+  }, []);
+
+  useEffect(() => {
+    refreshTripState();
+    const interval = setInterval(() => {
+      refreshTripState();
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [refreshTripState]);
 
   // Poll for notifications (for driver)
   useEffect(() => {
@@ -281,6 +319,29 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setIsDriverActive(false);
   };
 
+  const requestWaitForStop = useCallback((): ActionResult => {
+    if (!passengerProfile) {
+      return { success: false, reason: 'Passenger profile unavailable' };
+    }
+    const result = MockData.createWaitRequest(passengerProfile.id);
+    refreshTripState();
+    return result;
+  }, [passengerProfile, refreshTripState]);
+
+  const markAbsentForTrip = useCallback((): ActionResult => {
+    if (!passengerProfile) {
+      return { success: false, reason: 'Passenger profile unavailable' };
+    }
+    const result = MockData.markPassengerAbsent(passengerProfile.id);
+    refreshTripState();
+    return result;
+  }, [passengerProfile, refreshTripState]);
+
+  const advanceToNextStop = useCallback(() => {
+    MockData.advanceToNextStop();
+    refreshTripState();
+  }, [refreshTripState]);
+
   const sendNotification = useCallback((
     type: 'wait' | 'skip' | 'running_late' | 'ready',
     message?: string
@@ -317,6 +378,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
   };
 
   const unreadCount = notifications.filter(n => !n.isRead).length;
+  const passengerPreferredStopId = passengerProfile?.preferredStopId || null;
+  const passengerPreferredStopName = passengerProfile?.stopName || null;
+  const passengerCanRequestWait = passengerProfile
+    ? MockData.canPassengerRequestWait(passengerProfile.id).success
+    : false;
+  const hasMarkedAbsence = passengerProfile ? MockData.hasPassengerAbsent(passengerProfile.id) : false;
 
   return (
     <AppContext.Provider
@@ -331,6 +398,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
         currentLocation,
         busLocation,
         isDriverActive,
+        activeTrip,
+        stopStatuses,
+        currentStopStatus,
+        passengerPreferredStopId,
+        passengerPreferredStopName,
+        passengerCanRequestWait,
+        hasMarkedAbsence,
         notifications,
         unreadCount,
         students,
@@ -340,6 +414,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
         setRole,
         startTracking,
         stopTracking,
+        requestWaitForStop,
+        markAbsentForTrip,
+        advanceToNextStop,
         sendNotification,
         markNotificationRead,
         clearAllNotifications,

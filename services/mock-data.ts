@@ -11,14 +11,22 @@
  */
 
 import {
-    BusRoute,
-    BusStop,
-    Driver,
-    Location,
-    NotificationType,
-    Student,
-    StudentNotification,
+  ActionResult,
+  Absence,
+  BusRoute,
+  BusStop,
+  Driver,
+  Location,
+  NotificationType,
+  StopStatus,
+  Student,
+  StudentNotification,
+  TripState,
+  WaitRequest,
 } from '@/types';
+
+const BUS_ID = 'bus_1';
+const DRIVER_ID = 'driver-1';
 
 // Mock students data
 const mockStudents: Student[] = [
@@ -28,6 +36,8 @@ const mockStudents: Student[] = [
     stopName: 'Ganesh Nagar',
     stopLocation: { latitude: 26.9124, longitude: 75.7873, timestamp: Date.now() },
     status: 'waiting',
+    busId: BUS_ID,
+    preferredStopId: 'stop-1',
   },
   {
     id: 'student-2',
@@ -35,6 +45,8 @@ const mockStudents: Student[] = [
     stopName: 'Shanti Colony',
     stopLocation: { latitude: 26.9134, longitude: 75.7893, timestamp: Date.now() },
     status: 'waiting',
+    busId: BUS_ID,
+    preferredStopId: 'stop-2',
   },
   {
     id: 'student-3',
@@ -42,6 +54,8 @@ const mockStudents: Student[] = [
     stopName: 'Ram Nagar',
     stopLocation: { latitude: 26.9144, longitude: 75.7913, timestamp: Date.now() },
     status: 'waiting',
+    busId: BUS_ID,
+    preferredStopId: 'stop-3',
   },
   {
     id: 'student-4',
@@ -49,6 +63,8 @@ const mockStudents: Student[] = [
     stopName: 'Nehru Park',
     stopLocation: { latitude: 26.9154, longitude: 75.7933, timestamp: Date.now() },
     status: 'waiting',
+    busId: BUS_ID,
+    preferredStopId: 'stop-4',
   },
   {
     id: 'student-5',
@@ -56,6 +72,8 @@ const mockStudents: Student[] = [
     stopName: 'Station Road',
     stopLocation: { latitude: 26.9164, longitude: 75.7953, timestamp: Date.now() },
     status: 'waiting',
+    busId: BUS_ID,
+    preferredStopId: 'stop-5',
   },
 ];
 
@@ -67,6 +85,7 @@ const mockStops: BusStop[] = [
     location: { latitude: 26.9124, longitude: 75.7873, timestamp: Date.now() },
     students: ['student-1'],
     order: 1,
+    scheduledTime: '07:40',
   },
   {
     id: 'stop-2',
@@ -74,6 +93,7 @@ const mockStops: BusStop[] = [
     location: { latitude: 26.9134, longitude: 75.7893, timestamp: Date.now() },
     students: ['student-2'],
     order: 2,
+    scheduledTime: '07:45',
   },
   {
     id: 'stop-3',
@@ -81,6 +101,7 @@ const mockStops: BusStop[] = [
     location: { latitude: 26.9144, longitude: 75.7913, timestamp: Date.now() },
     students: ['student-3'],
     order: 3,
+    scheduledTime: '07:50',
   },
   {
     id: 'stop-4',
@@ -88,6 +109,7 @@ const mockStops: BusStop[] = [
     location: { latitude: 26.9154, longitude: 75.7933, timestamp: Date.now() },
     students: ['student-4'],
     order: 4,
+    scheduledTime: '07:55',
   },
   {
     id: 'stop-5',
@@ -95,12 +117,13 @@ const mockStops: BusStop[] = [
     location: { latitude: 26.9164, longitude: 75.7953, timestamp: Date.now() },
     students: ['student-5'],
     order: 5,
+    scheduledTime: '08:00',
   },
 ];
 
 // Mock driver
 const mockDriver: Driver = {
-  id: 'driver-1',
+  id: DRIVER_ID,
   name: 'Ramesh Ji',
   busNumber: 'RJ-14-SB-1234',
   phoneNumber: '+91-9876543210',
@@ -111,15 +134,219 @@ const mockDriver: Driver = {
 const mockRoute: BusRoute = {
   id: 'route-1',
   name: 'Morning Route - Village Road',
-  driverId: 'driver-1',
+  driverId: DRIVER_ID,
   stops: mockStops,
   isActive: false,
+};
+
+const buildTripId = (timestamp: number = Date.now()) => {
+  const date = new Date(timestamp);
+  const yyyy = date.getFullYear();
+  const mm = String(date.getMonth() + 1).padStart(2, '0');
+  const dd = String(date.getDate()).padStart(2, '0');
+  return `trip_${yyyy}_${mm}_${dd}`;
+};
+
+const createTrip = (): TripState => {
+  const now = Date.now();
+  const firstStop = mockStops[0];
+  return {
+    id: buildTripId(now),
+    busId: BUS_ID,
+    driverId: DRIVER_ID,
+    startedAt: now,
+    currentStopId: firstStop.id,
+    stopArrivedAt: now,
+    status: 'AT_STOP',
+    location: {
+      lat: firstStop.location.latitude,
+      lng: firstStop.location.longitude,
+    },
+  };
 };
 
 // In-memory store for notifications (simulates real-time updates)
 let notifications: StudentNotification[] = [];
 let currentBusLocation: Location | null = null;
 let isDriverActive = false;
+let activeTrip: TripState = createTrip();
+let waitRequests: Record<string, WaitRequest> = {};
+let absences: Record<string, Absence> = {};
+
+const ensureTripForToday = () => {
+  const todayTripId = buildTripId();
+  if (activeTrip.id !== todayTripId) {
+    activeTrip = createTrip();
+    waitRequests = {};
+    absences = {};
+  }
+};
+
+export function getStopById(stopId: string): BusStop | undefined {
+  return mockStops.find((stop) => stop.id === stopId);
+}
+
+export function ensurePassengerProfile(passengerId: string, displayName?: string): Student {
+  const existing = mockStudents.find((student) => student.id === passengerId);
+  if (existing) {
+    return existing;
+  }
+
+  const defaultStop = mockStops[0];
+  const newStudent: Student = {
+    id: passengerId,
+    name: displayName || `Passenger ${passengerId}`,
+    stopName: defaultStop.name,
+    stopLocation: defaultStop.location,
+    status: 'waiting',
+    busId: BUS_ID,
+    preferredStopId: defaultStop.id,
+  };
+  mockStudents.push(newStudent);
+  return newStudent;
+}
+
+export function getPassengersForStop(stopId: string): Student[] {
+  return mockStudents.filter(
+    (student) => student.busId === BUS_ID && student.preferredStopId === stopId
+  );
+}
+
+export function getWaitRequestsForStop(stopId: string): WaitRequest[] {
+  return Object.values(waitRequests).filter((request) => request.stopId === stopId);
+}
+
+export function getAbsencesForStop(stopId: string): Absence[] {
+  return Object.values(absences).filter((absence) => absence.stopId === stopId);
+}
+
+const computeStopStatus = (stopId: string, now: number = Date.now()): StopStatus => {
+  ensureTripForToday();
+  const stop = getStopById(stopId);
+  const passengers = getPassengersForStop(stopId);
+  const absenceList = getAbsencesForStop(stopId);
+  const waiters = getWaitRequestsForStop(stopId);
+  const allPassengersAbsent = passengers.length > 0 && absenceList.length === passengers.length;
+
+  const isCurrentStop = activeTrip.currentStopId === stopId && activeTrip.status === 'AT_STOP';
+  const elapsedSeconds = isCurrentStop ? Math.floor((now - activeTrip.stopArrivedAt) / 1000) : 0;
+
+  let color: StopStatus['color'] = 'GREEN';
+  let windowRemainingSeconds: number | null = null;
+
+  if (isCurrentStop) {
+    if (allPassengersAbsent) {
+      color = 'GREY';
+    } else if (elapsedSeconds <= 300) {
+      color = 'RED';
+      windowRemainingSeconds = Math.max(0, 300 - elapsedSeconds);
+    } else if (waiters.length > 0 && elapsedSeconds <= 420) {
+      color = 'YELLOW';
+      windowRemainingSeconds = Math.max(0, 420 - elapsedSeconds);
+    } else {
+      color = 'GREEN';
+    }
+  }
+
+  return {
+    stopId,
+    name: stop?.name || stopId,
+    color,
+    waitRequestCount: waiters.length,
+    allPassengersAbsent,
+    elapsedSeconds,
+    windowRemainingSeconds,
+  };
+};
+
+export function getStopStatuses(now: number = Date.now()): StopStatus[] {
+  ensureTripForToday();
+  return mockStops.map((stop) => computeStopStatus(stop.id, now));
+}
+
+export function getCurrentStopStatus(now: number = Date.now()): StopStatus {
+  ensureTripForToday();
+  return computeStopStatus(activeTrip.currentStopId, now);
+}
+
+export function getActiveTrip(): TripState {
+  ensureTripForToday();
+  return { ...activeTrip };
+}
+
+export function canPassengerRequestWait(passengerId: string): ActionResult {
+  ensureTripForToday();
+  const passenger = mockStudents.find((student) => student.id === passengerId);
+  if (!passenger) {
+    return { success: false, reason: 'Passenger not found' };
+  }
+  if (absences[passengerId]) {
+    return { success: false, reason: 'Marked absent for this trip' };
+  }
+  if (passenger.preferredStopId !== activeTrip.currentStopId) {
+    return { success: false, reason: 'Bus is not at your stop' };
+  }
+  if (activeTrip.status !== 'AT_STOP') {
+    return { success: false, reason: 'Bus is not stopped' };
+  }
+  const elapsedSeconds = Math.floor((Date.now() - activeTrip.stopArrivedAt) / 1000);
+  if (elapsedSeconds > 420) {
+    return { success: false, reason: 'Waiting window closed' };
+  }
+  return { success: true };
+}
+
+export function createWaitRequest(passengerId: string): ActionResult {
+  ensureTripForToday();
+  const eligibility = canPassengerRequestWait(passengerId);
+  if (!eligibility.success) {
+    return eligibility;
+  }
+  const passenger = ensurePassengerProfile(passengerId);
+  waitRequests[passengerId] = {
+    passengerId,
+    stopId: passenger.preferredStopId || activeTrip.currentStopId,
+    requestedAt: Date.now(),
+  };
+  return { success: true };
+}
+
+export function hasPassengerAbsent(passengerId: string): boolean {
+  ensureTripForToday();
+  return Boolean(absences[passengerId]);
+}
+
+export function markPassengerAbsent(passengerId: string): ActionResult {
+  ensureTripForToday();
+  if (absences[passengerId]) {
+    return { success: false, reason: 'Already marked absent for this trip' };
+  }
+  const passenger = ensurePassengerProfile(passengerId);
+  absences[passengerId] = {
+    passengerId,
+    stopId: passenger.preferredStopId || activeTrip.currentStopId,
+    markedAt: Date.now(),
+  };
+  return { success: true };
+}
+
+export function arriveAtStop(stopId: string, timestamp: number = Date.now()): StopStatus {
+  ensureTripForToday();
+  activeTrip = {
+    ...activeTrip,
+    currentStopId: stopId,
+    stopArrivedAt: timestamp,
+    status: 'AT_STOP',
+  };
+  return computeStopStatus(stopId, timestamp);
+}
+
+export function advanceToNextStop(): StopStatus {
+  ensureTripForToday();
+  const currentIndex = mockStops.findIndex((stop) => stop.id === activeTrip.currentStopId);
+  const nextStop = mockStops[(currentIndex + 1) % mockStops.length];
+  return arriveAtStop(nextStop.id, Date.now());
+}
 
 /**
  * Get all students on a route
@@ -226,6 +453,14 @@ export function clearNotifications(): void {
  */
 export function updateBusLocation(location: Location): void {
   currentBusLocation = location;
+  activeTrip = {
+    ...activeTrip,
+    location: {
+      lat: location.latitude,
+      lng: location.longitude,
+    },
+    status: activeTrip.status === 'AT_STOP' ? 'AT_STOP' : 'IN_TRANSIT',
+  };
 }
 
 /**

@@ -37,6 +37,8 @@ export interface Student {
   name: string;
   stopName: string;
   stopLocation: Location;
+  busId?: string;
+  preferredStopId?: string;
   phoneNumber?: string;
   status: StudentStatus;
   notificationMessage?: string;
@@ -51,6 +53,7 @@ export interface BusStop {
   estimatedArrival?: number; // timestamp
   students: string[]; // student IDs
   order: number; // order in route
+  scheduledTime?: string;
 }
 
 // Driver information
@@ -89,6 +92,51 @@ export interface DriverBroadcast {
   driverId: string;
   message: string;
   timestamp: number;
+}
+
+export type TripStatus = 'IN_TRANSIT' | 'AT_STOP';
+
+export interface TripState {
+  id: string;
+  busId: string;
+  driverId: string;
+  startedAt: number;
+  currentStopId: string;
+  stopArrivedAt: number;
+  status: TripStatus;
+  location?: {
+    lat: number;
+    lng: number;
+  };
+}
+
+export interface WaitRequest {
+  passengerId: string;
+  stopId: string;
+  requestedAt: number;
+}
+
+export interface Absence {
+  passengerId: string;
+  stopId: string;
+  markedAt: number;
+}
+
+export type StopColor = 'GREY' | 'RED' | 'YELLOW' | 'GREEN';
+
+export interface StopStatus {
+  stopId: string;
+  name: string;
+  color: StopColor;
+  waitRequestCount: number;
+  allPassengersAbsent: boolean;
+  elapsedSeconds: number;
+  windowRemainingSeconds: number | null;
+}
+
+export interface ActionResult {
+  success: boolean;
+  reason?: string;
 }
 
 // App state stored locally
