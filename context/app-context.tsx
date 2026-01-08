@@ -3,14 +3,27 @@
  * 
  * Global state management for the Bus Buddy app.
  * Provides user authentication, role, tracking state, and notifications across all screens.
+ * Includes trip management for driver-passenger coordination.
  */
 
 import * as AuthService from '@/services/auth';
 import * as FirestoreService from '@/services/firestore';
 import * as LocationService from '@/services/location';
 import * as MockData from '@/services/mock-data';
+import * as StopColorService from '@/services/stop-color';
 import * as StorageService from '@/services/storage';
-import { AuthUserData, Location, Student, StudentNotification, UserRole } from '@/types';
+import {
+    Absence,
+    AuthUserData,
+    FirestoreBus,
+    FirestoreTrip,
+    Location,
+    StopStatus,
+    Student,
+    StudentNotification,
+    UserRole,
+    WaitRequest,
+} from '@/types';
 import React, { createContext, ReactNode, useCallback, useContext, useEffect, useState } from 'react';
 
 interface AppContextType {
@@ -24,13 +37,31 @@ interface AppContextType {
   userId: string | null;
   isLoading: boolean;
   
+  // User profile state
+  userBusId: string | null;
+  userPreferredStopId: string | null;
+  
   // Location tracking (driver)
   isTracking: boolean;
   currentLocation: Location | null;
   
-  // Bus location (student view)
+  // Bus location (passenger view)
   busLocation: Location | null;
   isDriverActive: boolean;
+  
+  // Trip state
+  currentTrip: FirestoreTrip | null;
+  currentBus: FirestoreBus | null;
+  activeTripId: string | null;
+  
+  // Wait requests and absences
+  waitRequests: WaitRequest[];
+  absences: Absence[];
+  hasSubmittedWaitRequest: boolean;
+  hasMarkedAbsent: boolean;
+  
+  // Stop status (for driver UI)
+  currentStopStatus: StopStatus | null;
   
   // Notifications
   notifications: StudentNotification[];
@@ -53,6 +84,20 @@ interface AppContextType {
   clearAllNotifications: () => void;
   refreshBusLocation: () => void;
   logout: () => Promise<void>;
+  
+  // Trip actions (driver)
+  startTrip: () => Promise<void>;
+  endTrip: () => Promise<void>;
+  arriveAtStop: (stopId: string) => Promise<void>;
+  departFromStop: () => Promise<void>;
+  
+  // Passenger actions
+  submitWaitRequest: () => Promise<void>;
+  markAbsent: () => Promise<void>;
+  
+  // Utility functions
+  canSubmitWaitRequest: () => boolean;
+  canMarkAbsent: () => boolean;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -68,11 +113,32 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [userId, setUserId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   
+  // User profile state
+  const [userBusId, setUserBusId] = useState<string | null>(null);
+  const [userPreferredStopId, setUserPreferredStopId] = useState<string | null>(null);
+  
   // Location state
   const [isTracking, setIsTracking] = useState(false);
   const [currentLocation, setCurrentLocation] = useState<Location | null>(null);
   const [busLocation, setBusLocation] = useState<Location | null>(null);
   const [isDriverActive, setIsDriverActive] = useState(false);
+  
+  // Trip state
+  const [currentTrip, setCurrentTrip] = useState<FirestoreTrip | null>(null);
+  const [currentBus, setCurrentBus] = useState<FirestoreBus | null>(null);
+  const [activeTripId, setActiveTripId] = useState<string | null>(null);
+  
+  // Wait requests and absences
+  const [waitRequests, setWaitRequests] = useState<WaitRequest[]>([]);
+  const [absences, setAbsences] = useState<Absence[]>([]);
+  const [hasSubmittedWaitRequest, setHasSubmittedWaitRequest] = useState(false);
+  const [hasMarkedAbsent, setHasMarkedAbsent] = useState(false);
+  
+  // Current stop status
+  const [currentStopStatus, setCurrentStopStatus] = useState<StopStatus | null>(null);
+  
+  // Passengers at current stop (for driver)
+  const [passengersAtCurrentStop, setPassengersAtCurrentStop] = useState<FirestoreService.UserProfile[]>([]);
   
   // Notifications
   const [notifications, setNotifications] = useState<StudentNotification[]>([]);
@@ -99,6 +165,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
             setUserRole(userProfile.role);
             setUserName(userProfile.displayName);
             setUserId(firebaseUser.uid);
+            setUserBusId(userProfile.busId || null);
+            setUserPreferredStopId(userProfile.preferredStopId || null);
             
             // Save to local storage
             await StorageService.saveAppState({
@@ -129,6 +197,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
         setUserRole(null);
         setUserName(null);
         setUserId(null);
+        setUserBusId(null);
+        setUserPreferredStopId(null);
       }
       setIsLoading(false);
     });
@@ -141,9 +211,120 @@ export function AppProvider({ children }: { children: ReactNode }) {
     return unsubscribe;
   }, []);
 
-  // Poll for bus location updates (for students)
+  // Subscribe to bus data when user has a bus assigned
   useEffect(() => {
-    if (userRole === 'student') {
+    if (!userBusId) return;
+
+    const unsubscribe = FirestoreService.subscribeToBus(userBusId, (bus) => {
+      setCurrentBus(bus);
+      if (bus?.activeTripId) {
+        setActiveTripId(bus.activeTripId);
+      } else {
+        setActiveTripId(null);
+        setCurrentTrip(null);
+      }
+    });
+
+    return unsubscribe;
+  }, [userBusId]);
+
+  // Subscribe to trip data when there's an active trip
+  useEffect(() => {
+    if (!activeTripId) {
+      setCurrentTrip(null);
+      setWaitRequests([]);
+      setAbsences([]);
+      return;
+    }
+
+    const unsubTrip = FirestoreService.subscribeToTrip(activeTripId, (trip) => {
+      setCurrentTrip(trip);
+      setIsDriverActive(trip !== null);
+      if (trip?.location) {
+        setBusLocation({
+          latitude: trip.location.lat,
+          longitude: trip.location.lng,
+          timestamp: Date.now(),
+        });
+      }
+    });
+
+    const unsubWaitRequests = FirestoreService.subscribeToWaitRequests(activeTripId, (requests) => {
+      setWaitRequests(requests);
+      // Check if current user has a wait request
+      if (userId) {
+        setHasSubmittedWaitRequest(requests.some(r => r.passengerId === userId));
+      }
+    });
+
+    const unsubAbsences = FirestoreService.subscribeToAbsences(activeTripId, (abs) => {
+      setAbsences(abs);
+      // Check if current user has marked absence
+      if (userId) {
+        setHasMarkedAbsent(abs.some(a => a.passengerId === userId));
+      }
+    });
+
+    return () => {
+      unsubTrip();
+      unsubWaitRequests();
+      unsubAbsences();
+    };
+  }, [activeTripId, userId]);
+
+  // Update stop status when trip state changes (for driver)
+  useEffect(() => {
+    if (userRole !== 'driver' || !currentTrip || !currentBus) {
+      setCurrentStopStatus(null);
+      return;
+    }
+
+    const updateStopStatus = async () => {
+      if (!currentTrip.currentStopId) {
+        setCurrentStopStatus(null);
+        return;
+      }
+
+      // Find the current stop
+      const currentStop = currentBus.stops.find(s => s.stopId === currentTrip.currentStopId);
+      if (!currentStop) {
+        setCurrentStopStatus(null);
+        return;
+      }
+
+      // Get passengers at the current stop
+      try {
+        const passengers = await FirestoreService.getPassengersForStop(
+          currentBus.busNumber,
+          currentTrip.currentStopId
+        );
+        setPassengersAtCurrentStop(passengers);
+
+        // Compute stop status
+        const status = StopColorService.getStopStatus(
+          currentTrip.currentStopId,
+          currentStop.name,
+          currentTrip,
+          passengers,
+          waitRequests,
+          absences
+        );
+        setCurrentStopStatus(status);
+      } catch (error) {
+        console.error('Error updating stop status:', error);
+      }
+    };
+
+    updateStopStatus();
+    
+    // Update every second for countdown timer
+    const interval = setInterval(updateStopStatus, 1000);
+    return () => clearInterval(interval);
+  }, [userRole, currentTrip, currentBus, waitRequests, absences]);
+
+  // Poll for bus location updates (for passengers)
+  useEffect(() => {
+    if (userRole === 'passenger') {
       const interval = setInterval(() => {
         refreshBusLocation();
       }, 3000);
@@ -207,7 +388,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   /**
    * Sign out the current user
    */
-  const signOut = async (): Promise<void> => {
+  const signOutUser = async (): Promise<void> => {
     try {
       // Stop any active tracking
       if (isTracking) {
@@ -258,6 +439,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
       (location) => {
         setCurrentLocation(location);
         MockData.updateBusLocation(location);
+        
+        // Update trip location if there's an active trip
+        if (activeTripId) {
+          FirestoreService.updateTripLocation(activeTripId, {
+            lat: location.latitude,
+            lng: location.longitude,
+          }).catch(console.error);
+        }
       },
       (error) => {
         console.error('Location error:', error);
@@ -313,7 +502,169 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const logout = async () => {
-    await signOut();
+    await signOutUser();
+  };
+
+  // =====================================================
+  // Trip Management Functions (Driver)
+  // =====================================================
+
+  /**
+   * Start a new trip (driver action)
+   */
+  const startTrip = async (): Promise<void> => {
+    if (!userId || !userBusId || userRole !== 'driver') {
+      throw new Error('Only drivers can start trips');
+    }
+
+    if (!currentLocation) {
+      throw new Error('Location not available');
+    }
+
+    try {
+      const tripId = FirestoreService.generateTripId(userBusId);
+      await FirestoreService.createTrip(
+        tripId,
+        userBusId,
+        userId,
+        { lat: currentLocation.latitude, lng: currentLocation.longitude }
+      );
+      setActiveTripId(tripId);
+      console.log('Trip started:', tripId);
+    } catch (error) {
+      console.error('Error starting trip:', error);
+      throw error;
+    }
+  };
+
+  /**
+   * End the current trip (driver action)
+   */
+  const endTrip = async (): Promise<void> => {
+    if (!activeTripId || !userBusId || userRole !== 'driver') {
+      throw new Error('No active trip to end');
+    }
+
+    try {
+      await FirestoreService.updateBusData(userBusId, { activeTripId: null });
+      setActiveTripId(null);
+      setCurrentTrip(null);
+      console.log('Trip ended');
+    } catch (error) {
+      console.error('Error ending trip:', error);
+      throw error;
+    }
+  };
+
+  /**
+   * Arrive at a stop (driver action)
+   */
+  const arriveAtStopAction = async (stopId: string): Promise<void> => {
+    if (!activeTripId || userRole !== 'driver') {
+      throw new Error('No active trip or not a driver');
+    }
+
+    try {
+      await FirestoreService.arriveAtStop(activeTripId, stopId);
+      console.log('Arrived at stop:', stopId);
+    } catch (error) {
+      console.error('Error arriving at stop:', error);
+      throw error;
+    }
+  };
+
+  /**
+   * Depart from current stop (driver action)
+   */
+  const departFromStop = async (): Promise<void> => {
+    if (!activeTripId || userRole !== 'driver') {
+      throw new Error('No active trip or not a driver');
+    }
+
+    try {
+      await FirestoreService.departFromStop(activeTripId);
+      console.log('Departed from stop');
+    } catch (error) {
+      console.error('Error departing from stop:', error);
+      throw error;
+    }
+  };
+
+  // =====================================================
+  // Passenger Actions
+  // =====================================================
+
+  /**
+   * Submit a wait request (passenger action)
+   */
+  const submitWaitRequest = async (): Promise<void> => {
+    if (!userId || !activeTripId || !userPreferredStopId || userRole !== 'passenger') {
+      throw new Error('Cannot submit wait request');
+    }
+
+    if (hasMarkedAbsent) {
+      throw new Error('Cannot submit wait request after marking absent');
+    }
+
+    try {
+      await FirestoreService.createWaitRequest(activeTripId, userId, userPreferredStopId);
+      setHasSubmittedWaitRequest(true);
+      console.log('Wait request submitted');
+    } catch (error) {
+      console.error('Error submitting wait request:', error);
+      throw error;
+    }
+  };
+
+  /**
+   * Mark as absent for today (passenger action)
+   */
+  const markAbsentAction = async (): Promise<void> => {
+    if (!userId || !activeTripId || !userPreferredStopId || userRole !== 'passenger') {
+      throw new Error('Cannot mark absent');
+    }
+
+    if (hasMarkedAbsent) {
+      throw new Error('Already marked absent');
+    }
+
+    try {
+      await FirestoreService.markAbsent(activeTripId, userId, userPreferredStopId);
+      setHasMarkedAbsent(true);
+      console.log('Marked as absent');
+    } catch (error) {
+      console.error('Error marking absent:', error);
+      throw error;
+    }
+  };
+
+  // =====================================================
+  // Utility Functions
+  // =====================================================
+
+  /**
+   * Check if passenger can submit a wait request
+   */
+  const canSubmitWaitRequestCheck = (): boolean => {
+    if (!currentTrip) return false;
+    
+    const elapsedSeconds = StopColorService.calculateElapsedSeconds(currentTrip.stopArrivedAt);
+    
+    return StopColorService.canSubmitWaitRequest(
+      userPreferredStopId || undefined,
+      currentTrip.currentStopId,
+      currentTrip.status,
+      elapsedSeconds,
+      hasMarkedAbsent,
+      hasSubmittedWaitRequest
+    );
+  };
+
+  /**
+   * Check if passenger can mark absent
+   */
+  const canMarkAbsentCheck = (): boolean => {
+    return StopColorService.canMarkAbsent(activeTripId !== null, hasMarkedAbsent);
   };
 
   const unreadCount = notifications.filter(n => !n.isRead).length;
@@ -327,16 +678,26 @@ export function AppProvider({ children }: { children: ReactNode }) {
         userName,
         userId,
         isLoading,
+        userBusId,
+        userPreferredStopId,
         isTracking,
         currentLocation,
         busLocation,
         isDriverActive,
+        currentTrip,
+        currentBus,
+        activeTripId,
+        waitRequests,
+        absences,
+        hasSubmittedWaitRequest,
+        hasMarkedAbsent,
+        currentStopStatus,
         notifications,
         unreadCount,
         students,
         login,
         register,
-        signOut,
+        signOut: signOutUser,
         setRole,
         startTracking,
         stopTracking,
@@ -345,6 +706,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
         clearAllNotifications,
         refreshBusLocation,
         logout,
+        startTrip,
+        endTrip,
+        arriveAtStop: arriveAtStopAction,
+        departFromStop,
+        submitWaitRequest,
+        markAbsent: markAbsentAction,
+        canSubmitWaitRequest: canSubmitWaitRequestCheck,
+        canMarkAbsent: canMarkAbsentCheck,
       }}
     >
       {children}

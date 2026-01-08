@@ -2,17 +2,94 @@ rules_version='2'
 
 service cloud.firestore {
   match /databases/{database}/documents {
-    match /{document=**} {
-      // This rule allows anyone with your database reference to view, edit,
-      // and delete all data in your database. It is useful for getting
-      // started, but it is configured to expire after 30 days because it
-      // leaves your app open to attackers. At that time, all client
-      // requests to your database will be denied.
-      //
-      // Make sure to write security rules for your app before that time, or
-      // else all client requests to your database will be denied until you
-      // update your rules.
-      allow read, write: if request.time < timestamp.date(2026, 2, 7);
+    // Helper function to check if user is authenticated
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    // Helper function to get user role from their document
+    function getUserRole() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role;
+    }
+    
+    // Helper function to check if user is a driver
+    function isDriver() {
+      return isAuthenticated() && getUserRole() == 'driver';
+    }
+    
+    // Helper function to check if user is a passenger
+    function isPassenger() {
+      return isAuthenticated() && getUserRole() == 'passenger';
+    }
+    
+    // Helper function to check if user owns the document
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    // Users collection
+    match /users/{userId} {
+      // Users can read their own profile
+      // Drivers can read passenger profiles for their bus
+      allow read: if isAuthenticated();
+      
+      // Users can only write to their own profile
+      allow create, update: if isOwner(userId);
+      allow delete: if isOwner(userId);
+    }
+    
+    // Buses collection
+    match /buses/{busId} {
+      // Anyone authenticated can read bus data
+      allow read: if isAuthenticated();
+      
+      // Only drivers can update bus data
+      allow update: if isDriver();
+      
+      // Creating/deleting buses requires admin (not implemented)
+      allow create, delete: if false;
+    }
+    
+    // Trips collection
+    match /trips/{tripId} {
+      // Anyone authenticated can read trip data
+      allow read: if isAuthenticated();
+      
+      // Only drivers can create and update trips
+      allow create: if isDriver();
+      allow update: if isDriver();
+      
+      // Trips should not be deleted (historical data)
+      allow delete: if false;
+      
+      // Wait requests subcollection
+      match /waitRequests/{requestId} {
+        // Anyone authenticated can read wait requests
+        allow read: if isAuthenticated();
+        
+        // Only passengers can create wait requests for themselves
+        // requestId must match the user's UID
+        allow create: if isPassenger() && requestId == request.auth.uid;
+        
+        // Passengers can update their own wait request
+        allow update: if isOwner(requestId);
+        
+        // Wait requests should not be deleted
+        allow delete: if false;
+      }
+      
+      // Absences subcollection
+      match /absences/{absenceId} {
+        // Anyone authenticated can read absences
+        allow read: if isAuthenticated();
+        
+        // Only passengers can create absences for themselves
+        // absenceId must match the user's UID
+        allow create: if isPassenger() && absenceId == request.auth.uid;
+        
+        // Absences cannot be updated or deleted (final for the trip)
+        allow update, delete: if false;
+      }
     }
   }
 }

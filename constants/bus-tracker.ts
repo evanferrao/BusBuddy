@@ -29,6 +29,44 @@ export const ARRIVAL_THRESHOLDS = {
   WAITING_TIME: 120, // Wait 2 minutes at stop by default (in seconds)
 } as const;
 
+// Stop color timing constants (in seconds)
+export const STOP_COLOR_TIMING = {
+  RED_DURATION: 300,    // 5 minutes - standard waiting window
+  YELLOW_END: 420,      // 7 minutes - extended wait limit
+} as const;
+
+// Stop color configuration
+export const STOP_COLOR_CONFIG = {
+  GREY: {
+    backgroundColor: '#8E8E93',
+    textColor: '#FFFFFF',
+    label: 'All Absent',
+    description: 'All passengers marked absent - may skip stop',
+    emoji: '⬜',
+  },
+  RED: {
+    backgroundColor: '#FF3B30',
+    textColor: '#FFFFFF',
+    label: 'Waiting',
+    description: 'Standard waiting window (0-5 min)',
+    emoji: '🔴',
+  },
+  YELLOW: {
+    backgroundColor: '#FFCC00',
+    textColor: '#000000',
+    label: 'Extended Wait',
+    description: 'Wait request received (5-7 min)',
+    emoji: '🟡',
+  },
+  GREEN: {
+    backgroundColor: '#34C759',
+    textColor: '#FFFFFF',
+    label: 'Ready',
+    description: 'In transit or stop complete',
+    emoji: '🟢',
+  },
+} as const;
+
 // Notification types with labels and colors
 export const NOTIFICATION_CONFIG = {
   wait: {
@@ -89,6 +127,7 @@ export const BUS_COLORS = {
   danger: '#FF3B30', // Red
   warning: '#FFCC00', // Yellow
   info: '#5856D6', // Purple
+  grey: '#8E8E93', // Grey for absent status
   background: {
     light: '#F2F2F7',
     dark: '#1C1C1E',

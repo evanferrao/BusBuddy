@@ -2,7 +2,7 @@
  * Role Selection Screen
  * 
  * First screen users see when they open the app.
- * Allows them to choose between Driver and Student roles.
+ * Allows them to choose between Driver and Passenger roles.
  */
 
 import { IconSymbol } from '@/components/ui/icon-symbol';
@@ -29,13 +29,13 @@ export default function RoleSelectionScreen() {
   const colorScheme = useColorScheme();
   const isDark = colorScheme === 'dark';
   
-  const [selectedRole, setSelectedRole] = useState<'driver' | 'student' | null>(null);
+  const [selectedRole, setSelectedRole] = useState<'driver' | 'passenger' | null>(null);
   const [name, setName] = useState('');
   const [isLoading, setIsLoading] = useState(false);
 
   const handleContinue = async () => {
     if (!selectedRole) {
-      Alert.alert('Select Role', 'Please select whether you are a Driver or Student');
+      Alert.alert('Select Role', 'Please select whether you are a Driver or Passenger');
       return;
     }
     
@@ -102,17 +102,17 @@ export default function RoleSelectionScreen() {
             style={[
               styles.roleCard,
               { backgroundColor: cardColor },
-              selectedRole === 'student' && styles.roleCardSelected,
+              selectedRole === 'passenger' && styles.roleCardSelected,
             ]}
-            onPress={() => setSelectedRole('student')}
+            onPress={() => setSelectedRole('passenger')}
             activeOpacity={0.8}
           >
             <Text style={styles.roleEmoji}>🎒</Text>
-            <Text style={[styles.roleTitle, { color: textColor }]}>Student</Text>
+            <Text style={[styles.roleTitle, { color: textColor }]}>Passenger</Text>
             <Text style={[styles.roleDescription, { color: secondaryTextColor }]}>
               Track your bus & notify driver
             </Text>
-            {selectedRole === 'student' && (
+            {selectedRole === 'passenger' && (
               <View style={styles.checkmark}>
                 <IconSymbol name="checkmark.circle.fill" size={24} color={BUS_COLORS.success} />
               </View>
