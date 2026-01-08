@@ -11,22 +11,22 @@ import { useColorScheme } from '@/hooks/use-color-scheme';
 import { getAuthErrorMessage } from '@/services/auth';
 import { UserRole } from '@/types';
 import { useRouter } from 'expo-router';
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
-  ActivityIndicator,
-  KeyboardAvoidingView,
-  Platform,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  View,
+    ActivityIndicator,
+    KeyboardAvoidingView,
+    Platform,
+    ScrollView,
+    StyleSheet,
+    Text,
+    TextInput,
+    TouchableOpacity,
+    View,
 } from 'react-native';
 
 export default function SignUpScreen() {
   const router = useRouter();
-  const { register } = useApp();
+  const { register, isAuthenticated } = useApp();
   const colorScheme = useColorScheme();
   const isDark = colorScheme === 'dark';
 
@@ -38,6 +38,13 @@ export default function SignUpScreen() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showPassword, setShowPassword] = useState(false);
+
+  // Navigate when auth state changes to authenticated
+  useEffect(() => {
+    if (isAuthenticated) {
+      router.replace('/');
+    }
+  }, [isAuthenticated]);
 
   const backgroundColor = isDark ? BUS_COLORS.background.dark : BUS_COLORS.background.light;
   const cardColor = isDark ? BUS_COLORS.card.dark : BUS_COLORS.card.light;
@@ -84,7 +91,7 @@ export default function SignUpScreen() {
 
     try {
       await register(email.trim(), password, selectedRole, displayName.trim());
-      // Navigation will be handled by auth state change in root layout
+      // Navigation handled by useEffect watching isAuthenticated
     } catch (err: any) {
       setError(getAuthErrorMessage(err.code));
     } finally {
