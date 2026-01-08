@@ -70,22 +70,24 @@ export function computeStopColor(
  * At stop arrival:
  * - Query all passengers where busId == busId and preferredStopId == currentStopId
  * - Query absences where stopId == currentStopId
- * - If counts match and > 0 → All absent
+ * - If all passengers have matching absences → All absent
  */
 export function areAllPassengersAbsent(
   passengersAtStop: UserProfile[],
   absencesAtStop: Absence[]
 ): boolean {
   const totalPassengers = passengersAtStop.length;
-  const absentCount = absencesAtStop.length;
 
   // If no passengers at stop, not "all absent"
   if (totalPassengers === 0) {
     return false;
   }
 
-  // All passengers absent if counts match
-  return absentCount >= totalPassengers;
+  // Create a set of absent passenger IDs for efficient lookup
+  const absentPassengerIds = new Set(absencesAtStop.map(a => a.passengerId));
+
+  // Check if every passenger has marked absence
+  return passengersAtStop.every(passenger => absentPassengerIds.has(passenger.uid));
 }
 
 /**

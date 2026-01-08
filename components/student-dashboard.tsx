@@ -85,11 +85,12 @@ export default function StudentDashboard() {
   }, [isDriverActive, pulseAnim]);
 
   // Calculate distance and ETA using the user's preferred stop
+  // Returns null if no stop location is available
   const myStopCoords = myStopLocation 
     ? { latitude: myStopLocation.lat, longitude: myStopLocation.lng }
-    : { latitude: 26.9124, longitude: 75.7873 }; // Default fallback
+    : null;
 
-  const distance = busLocation
+  const distance = (busLocation && myStopCoords)
     ? calculateDistance(
         busLocation.latitude,
         busLocation.longitude,
@@ -98,7 +99,7 @@ export default function StudentDashboard() {
       )
     : null;
 
-  const eta = busLocation
+  const eta = (busLocation && myStopCoords)
     ? getEstimatedArrival(
         busLocation,
         { ...myStopCoords, timestamp: Date.now() }

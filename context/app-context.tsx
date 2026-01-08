@@ -295,7 +295,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       // Get passengers at the current stop
       try {
         const passengers = await FirestoreService.getPassengersForStop(
-          currentBus.busNumber,
+          currentTrip.busId,
           currentTrip.currentStopId
         );
         setPassengersAtCurrentStop(passengers);
