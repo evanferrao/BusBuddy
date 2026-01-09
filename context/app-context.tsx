@@ -65,6 +65,8 @@ interface AppContextType {
   setRole: (role: UserRole, name: string) => Promise<void>;
   startTracking: () => Promise<boolean>;
   stopTracking: () => void;
+  arriveAtStop: (stopId: string) => Promise<void>;
+  departFromStop: () => Promise<void>;
   sendNotification: (type: NotificationType, message?: string) => void;
   markNotificationRead: (id: string) => void;
   clearAllNotifications: () => void;
@@ -504,6 +506,36 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
   };
 
+  const arriveAtStop = async (stopId: string): Promise<void> => {
+    if (!activeTrip) {
+      console.error('Cannot arrive at stop: no active trip');
+      return;
+    }
+
+    try {
+      await TripService.arriveAtStop(activeTrip.tripId, stopId);
+      console.log('Arrived at stop:', stopId);
+    } catch (error) {
+      console.error('Error arriving at stop:', error);
+      throw error;
+    }
+  };
+
+  const departFromStop = async (): Promise<void> => {
+    if (!activeTrip) {
+      console.error('Cannot depart from stop: no active trip');
+      return;
+    }
+
+    try {
+      await TripService.departFromStop(activeTrip.tripId);
+      console.log('Departed from stop');
+    } catch (error) {
+      console.error('Error departing from stop:', error);
+      throw error;
+    }
+  };
+
   const sendNotification = useCallback(async (
     type: NotificationType,
     message?: string
@@ -596,6 +628,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
         setRole,
         startTracking,
         stopTracking,
+        arriveAtStop,
+        departFromStop,
         sendNotification,
         markNotificationRead,
         clearAllNotifications,

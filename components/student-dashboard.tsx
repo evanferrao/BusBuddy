@@ -18,8 +18,9 @@ import {
 } from '@/constants/bus-tracker';
 import { useApp } from '@/context/app-context';
 import { useColorScheme } from '@/hooks/use-color-scheme';
+import * as BusService from '@/services/bus-service';
 import { calculateDistance, formatDistance, formatETA, getBusStops, getEstimatedArrival } from '@/services/mock-data';
-import { NotificationType } from '@/types';
+import { Bus, NotificationType } from '@/types';
 import React, { useEffect, useState } from 'react';
 import {
     Alert,
@@ -32,14 +33,6 @@ import {
     View,
 } from 'react-native';
 
-// Student's stop (from user profile in production)
-const MY_STOP = {
-  id: 'stop_1',
-  name: 'Ganesh Nagar',
-  latitude: 26.9124,
-  longitude: 75.7873,
-};
-
 export default function StudentDashboard() {
   const {
     userName,
@@ -51,6 +44,7 @@ export default function StudentDashboard() {
     hasSentWaitRequest,
     preferredStopId,
     activeTrip,
+    busId,
   } = useApp();
   
   const colorScheme = useColorScheme();
@@ -58,11 +52,31 @@ export default function StudentDashboard() {
   const [refreshing, setRefreshing] = useState(false);
   const [lastSentNotification, setLastSentNotification] = useState<NotificationType | null>(null);
   const [pulseAnim] = useState(new Animated.Value(1));
+  const [bus, setBus] = useState<Bus | null>(null);
+  
+  // Get student's stop from bus data
+  const myStop = bus?.stops.find(s => s.stopId === preferredStopId);
 
   const backgroundColor = isDark ? BUS_COLORS.background.dark : BUS_COLORS.background.light;
   const cardColor = isDark ? BUS_COLORS.card.dark : BUS_COLORS.card.light;
   const textColor = isDark ? BUS_COLORS.text.dark : BUS_COLORS.text.light;
   const secondaryTextColor = isDark ? BUS_COLORS.textSecondary.dark : BUS_COLORS.textSecondary.light;
+
+  // Load bus data
+  useEffect(() => {
+    if (!busId) return;
+
+    const loadBus = async () => {
+      try {
+        const busData = await BusService.getBus(busId);
+        setBus(busData);
+      } catch (error) {
+        console.error('Error loading bus:', error);
+      }
+    };
+
+    loadBus();
+  }, [busId]);
 
   // Pulse animation for live indicator
   useEffect(() => {
@@ -87,19 +101,19 @@ export default function StudentDashboard() {
   }, [isDriverActive, pulseAnim]);
 
   // Calculate distance and ETA
-  const distance = busLocation
+  const distance = busLocation && myStop
     ? calculateDistance(
         busLocation.latitude,
         busLocation.longitude,
-        MY_STOP.latitude,
-        MY_STOP.longitude
+        myStop.lat,
+        myStop.lng
       )
     : null;
 
-  const eta = busLocation
+  const eta = busLocation && myStop
     ? getEstimatedArrival(
         busLocation,
-        { ...MY_STOP, timestamp: Date.now() }
+        { latitude: myStop.lat, longitude: myStop.lng, timestamp: Date.now() }
       )
     : null;
 
@@ -119,7 +133,7 @@ export default function StudentDashboard() {
    * - "Wait for Me" enabled if: not marked absent, at current stop, bus at stop, within 7 min
    * - "Absent Today" enabled if: trip active, not already marked absent
    */
-  const handleSendNotification = (type: NotificationType) => {
+  const handleSendNotification = async (type: NotificationType) => {
     // Check if action is allowed per specification
     if (type === 'wait' && hasMarkedAbsence) {
       Alert.alert('Cannot Request Wait', 'You have already marked yourself absent for today.');
@@ -131,6 +145,11 @@ export default function StudentDashboard() {
       return;
     }
     
+    if (!activeTrip) {
+      Alert.alert('No Active Trip', 'The bus is not currently active.');
+      return;
+    }
+    
     const config = NOTIFICATION_CONFIG[type];
     Alert.alert(
       config.label,
@@ -139,22 +158,24 @@ export default function StudentDashboard() {
         { text: 'Cancel', style: 'cancel' },
         {
           text: 'Send',
-          onPress: () => {
-            sendNotification(type);
-            setLastSentNotification(type);
-            
-            if (type === 'skip') {
-              Alert.alert('Marked Absent', 'The driver has been notified you won\'t be taking the bus today.');
-            } else {
-              Alert.alert('Sent!', 'The driver has been notified to wait for you.');
+          onPress: async () => {
+            try {
+              await sendNotification(type);
+              setLastSentNotification(type);
+              
+              if (type === 'skip') {
+                Alert.alert('Marked Absent', 'The driver has been notified you won\'t be taking the bus today.');
+              } else {
+                Alert.alert('Sent!', 'The driver has been notified to wait for you.');
+              }
+            } catch (error) {
+              Alert.alert('Error', 'Failed to send notification. Please try again.');
             }
           },
         },
       ]
     );
   };
-
-  const busStops = getBusStops();
 
   return (
     <ScrollView
@@ -169,7 +190,7 @@ export default function StudentDashboard() {
         <Text style={[styles.greeting, { color: secondaryTextColor }]}>Hello,</Text>
         <Text style={[styles.userName, { color: textColor }]}>{userName || 'Student'}</Text>
         <Text style={[styles.stopInfo, { color: secondaryTextColor }]}>
-          📍 Your stop: {MY_STOP.name}
+          📍 Your stop: {myStop?.name || 'Not assigned'}
         </Text>
       </View>
 
