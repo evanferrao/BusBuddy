@@ -5,21 +5,21 @@
  * In production, this would be replaced with actual Firestore operations.
  * 
  * Data model follows the specification:
- * - buses collection with stops array
+ * - routes collection with stops array
  * - trips collection for live state
  * - waitRequests and absences subcollections
  */
 
 import {
-    Bus,
-    BusRoute,
-    BusStop,
-    BusStopDefinition,
-    Driver,
-    Location,
-    NotificationType,
-    Student,
-    StudentNotification
+  BusRoute,
+  BusStop,
+  Driver,
+  Location,
+  NotificationType,
+  Route,
+  RouteStop,
+  Student,
+  StudentNotification,
 } from '@/types';
 
 // Mock students data (with stopId added per spec)
@@ -27,6 +27,7 @@ const mockStudents: Student[] = [
   {
     id: 'student-1',
     name: 'Rahul Sharma',
+    busNo: '1',
     stopName: 'Ganesh Nagar',
     stopId: 'stop_1',
     stopLocation: { latitude: 26.9124, longitude: 75.7873, timestamp: Date.now() },
@@ -35,6 +36,7 @@ const mockStudents: Student[] = [
   {
     id: 'student-2',
     name: 'Priya Patel',
+    busNo: '1',
     stopName: 'Shanti Colony',
     stopId: 'stop_2',
     stopLocation: { latitude: 26.9134, longitude: 75.7893, timestamp: Date.now() },
@@ -43,6 +45,7 @@ const mockStudents: Student[] = [
   {
     id: 'student-3',
     name: 'Amit Kumar',
+    busNo: '1',
     stopName: 'Ram Nagar',
     stopId: 'stop_3',
     stopLocation: { latitude: 26.9144, longitude: 75.7913, timestamp: Date.now() },
@@ -51,6 +54,7 @@ const mockStudents: Student[] = [
   {
     id: 'student-4',
     name: 'Sneha Gupta',
+    busNo: '1',
     stopName: 'Nehru Park',
     stopId: 'stop_4',
     stopLocation: { latitude: 26.9154, longitude: 75.7933, timestamp: Date.now() },
@@ -59,6 +63,7 @@ const mockStudents: Student[] = [
   {
     id: 'student-5',
     name: 'Vikram Singh',
+    busNo: '1',
     stopName: 'Station Road',
     stopId: 'stop_5',
     stopLocation: { latitude: 26.9164, longitude: 75.7953, timestamp: Date.now() },
@@ -66,13 +71,12 @@ const mockStudents: Student[] = [
   },
 ];
 
-// Mock bus stops (legacy format for backward compatibility)
+// Mock bus stops (legacy format for backward compatibility - no student lists stored)
 const mockStops: BusStop[] = [
   {
     id: 'stop_1',
     name: 'Ganesh Nagar',
     location: { latitude: 26.9124, longitude: 75.7873, timestamp: Date.now() },
-    students: ['student-1'],
     order: 1,
     scheduledTime: '07:30',
   },
@@ -80,7 +84,6 @@ const mockStops: BusStop[] = [
     id: 'stop_2',
     name: 'Shanti Colony',
     location: { latitude: 26.9134, longitude: 75.7893, timestamp: Date.now() },
-    students: ['student-2'],
     order: 2,
     scheduledTime: '07:35',
   },
@@ -88,7 +91,6 @@ const mockStops: BusStop[] = [
     id: 'stop_3',
     name: 'Ram Nagar',
     location: { latitude: 26.9144, longitude: 75.7913, timestamp: Date.now() },
-    students: ['student-3'],
     order: 3,
     scheduledTime: '07:40',
   },
@@ -96,7 +98,6 @@ const mockStops: BusStop[] = [
     id: 'stop_4',
     name: 'Nehru Park',
     location: { latitude: 26.9154, longitude: 75.7933, timestamp: Date.now() },
-    students: ['student-4'],
     order: 4,
     scheduledTime: '07:45',
   },
@@ -104,24 +105,22 @@ const mockStops: BusStop[] = [
     id: 'stop_5',
     name: 'Station Road',
     location: { latitude: 26.9164, longitude: 75.7953, timestamp: Date.now() },
-    students: ['student-5'],
     order: 5,
     scheduledTime: '07:50',
   },
 ];
 
-// Mock bus (per Firestore spec: buses/{busId})
-const mockBus: Bus = {
-  busId: 'bus_1',
-  busNumber: 'RJ-14-SB-1234',
-  driverId: 'driver-1',
-  activeTripId: null,
-  stops: mockStops.map(stop => ({
+// Mock route (per Firestore spec: routes/{routeId})
+const mockRouteDefinition: Route = {
+  routeId: 'route_1',
+  busNo: '1',
+  stops: mockStops.map<RouteStop>((stop) => ({
     stopId: stop.id,
     name: stop.name,
+    time: stop.scheduledTime || '07:30',
+    scheduledTime: stop.scheduledTime || '07:30',
     lat: stop.location.latitude,
     lng: stop.location.longitude,
-    scheduledTime: stop.scheduledTime || '07:30',
   })),
 };
 
@@ -184,17 +183,17 @@ export function getBusStops(): BusStop[] {
 }
 
 /**
- * Get the mock bus (per Firestore spec)
+ * Get the mock route (per Firestore spec)
  */
-export function getMockBus(): Bus {
-  return { ...mockBus };
+export function getMockRoute(): Route {
+  return { ...mockRouteDefinition };
 }
 
 /**
  * Get stop definition by ID
  */
-export function getStopById(stopId: string): BusStopDefinition | undefined {
-  return mockBus.stops.find(s => s.stopId === stopId);
+export function getStopById(stopId: string): RouteStop | undefined {
+  return mockRouteDefinition.stops.find((s) => s.stopId === stopId);
 }
 
 /**

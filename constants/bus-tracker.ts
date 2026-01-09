@@ -3,6 +3,13 @@
 export const APP_NAME = 'Bus Buddy';
 export const APP_TAGLINE = 'Never miss your school bus again!';
 
+// Default route assignment used across demos and mocks
+export const DEFAULT_ASSIGNMENT = {
+  BUS_NO: '1',
+  ROUTE_ID: 'route_1',
+  PREFERRED_STOP_ID: 'stop_1',
+} as const;
+
 // Storage keys for AsyncStorage
 export const STORAGE_KEYS = {
   APP_STATE: '@bus_buddy_app_state',

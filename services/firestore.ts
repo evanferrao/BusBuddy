@@ -1,36 +1,7 @@
-/**
- * Firestore Service
- * 
- * Handles Firestore database operations including:
- * - User profile management
- * - User role storage and retrieval
- * - Bus assignment for passengers
- */
-
-import { UserRole } from '@/types';
-import {
-    collection,
-    deleteDoc,
-    doc,
-    getDoc,
-    setDoc,
-    updateDoc
-} from 'firebase/firestore';
+import { DEFAULT_ASSIGNMENT } from '@/constants/bus-tracker';
+import { UserProfile, UserRole } from '@/types';
+import { deleteDoc, doc, getDoc, setDoc, updateDoc } from 'firebase/firestore';
 import { db } from './firebase-config';
-
-const usersCollection = collection(db, 'users');
-
-// User profile matching Firestore data model specification
-export interface UserProfile {
-  uid: string;
-  email: string;
-  displayName: string;
-  role: UserRole;
-  busId: string;                    // Bus assigned to user
-  preferredStopId?: string;         // Passengers only - their pickup stop
-  createdAt: number;
-  updatedAt: number;
-}
 
 /**
  * Save or update user data
@@ -67,15 +38,15 @@ export const getUserData = async (userId: string): Promise<UserProfile | null> =
 
 /**
  * Create a new user profile after registration
- * For passengers, busId and preferredStopId should be set after registration
- * For drivers, busId will be assigned by admin
+ * For passengers, busNo and preferredStopId should be set after registration
+ * For drivers, busNo will be assigned by admin
  */
 export const createUserProfile = async (
   uid: string, 
   email: string, 
   displayName: string, 
   role: UserRole,
-  busId: string = 'bus_1',              // Default bus for demo
+  busNo: string = DEFAULT_ASSIGNMENT.BUS_NO, // Default bus number for demo
   preferredStopId?: string              // Only for passengers
 ): Promise<UserProfile> => {
   const now = Date.now();
@@ -84,7 +55,7 @@ export const createUserProfile = async (
     email,
     displayName,
     role,
-    busId,
+    busNo,
     ...(role === 'student' && preferredStopId ? { preferredStopId } : {}),
     createdAt: now,
     updatedAt: now,
@@ -166,16 +137,16 @@ export const updatePreferredStop = async (userId: string, preferredStopId: strin
 };
 
 /**
- * Update user's assigned bus
+ * Update user's assigned bus number
  */
-export const updateUserBus = async (userId: string, busId: string): Promise<void> => {
+export const updateUserBus = async (userId: string, busNo: string): Promise<void> => {
   try {
     const userRef = doc(db, 'users', userId);
     await updateDoc(userRef, {
-      busId,
+      busNo,
       updatedAt: Date.now(),
     });
-    console.log('User bus updated');
+    console.log('User bus number updated');
   } catch (error) {
     console.error('Error updating user bus:', error);
     throw error;

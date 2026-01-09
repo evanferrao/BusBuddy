@@ -15,6 +15,7 @@ import * as FirestoreService from '@/services/firestore';
 import * as LocationService from '@/services/location';
 import * as MockData from '@/services/mock-data';
 import * as StorageService from '@/services/storage';
+import { DEFAULT_ASSIGNMENT } from '@/constants/bus-tracker';
 import { AuthUserData, Location, NotificationType, StopState, Student, StudentNotification, Trip, UserRole } from '@/types';
 import React, { createContext, ReactNode, useCallback, useContext, useEffect, useState } from 'react';
 
@@ -27,7 +28,7 @@ interface AppContextType {
   userRole: UserRole;
   userName: string | null;
   userId: string | null;
-  busId: string | null;
+  busNo: string | null;
   preferredStopId: string | null;
   isLoading: boolean;
   
@@ -81,8 +82,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [userRole, setUserRole] = useState<UserRole>(null);
   const [userName, setUserName] = useState<string | null>(null);
   const [userId, setUserId] = useState<string | null>(null);
-  const [busId, setBusId] = useState<string | null>('bus_1'); // Default bus for demo
-  const [preferredStopId, setPreferredStopId] = useState<string | null>('stop_1'); // Default stop for demo
+  const [busNo, setBusNo] = useState<string | null>(DEFAULT_ASSIGNMENT.BUS_NO);
+  const [preferredStopId, setPreferredStopId] = useState<string | null>(DEFAULT_ASSIGNMENT.PREFERRED_STOP_ID);
   const [isLoading, setIsLoading] = useState(true);
   
   // Location state
@@ -124,12 +125,16 @@ export function AppProvider({ children }: { children: ReactNode }) {
             setUserRole(userProfile.role);
             setUserName(userProfile.displayName);
             setUserId(firebaseUser.uid);
+            setBusNo(userProfile.busNo || null);
+            setPreferredStopId(userProfile.preferredStopId || null);
             
             // Save to local storage
             await StorageService.saveAppState({
               userRole: userProfile.role,
               userName: userProfile.displayName,
               userId: firebaseUser.uid,
+              busNo: userProfile.busNo || null,
+              preferredStopId: userProfile.preferredStopId || null,
               onboardingComplete: true,
             });
           } else {
@@ -360,7 +365,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         userRole,
         userName,
         userId,
-        busId,
+        busNo,
         preferredStopId,
         isLoading,
         isTracking,

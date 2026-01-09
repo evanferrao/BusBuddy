@@ -9,7 +9,7 @@ import { useApp } from '@/context/app-context';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { getBusStops } from '@/services/mock-data';
 import { StudentNotification } from '@/types';
-import React from 'react';
+import React, { useMemo } from 'react';
 import {
     RefreshControl,
     ScrollView,
@@ -24,11 +24,20 @@ export default function PassengerActivityScreen() {
     notifications,
     markNotificationRead,
     clearAllNotifications,
+    students,
   } = useApp();
   
   const colorScheme = useColorScheme();
   const isDark = colorScheme === 'dark';
   const [refreshing, setRefreshing] = React.useState(false);
+
+  const studentCountsByStop = useMemo(() => {
+    const counts = new Map<string, number>();
+    students.forEach(({ stopId }) => {
+      counts.set(stopId, (counts.get(stopId) ?? 0) + 1);
+    });
+    return counts;
+  }, [students]);
 
   const backgroundColor = isDark ? BUS_COLORS.background.dark : BUS_COLORS.background.light;
   const cardColor = isDark ? BUS_COLORS.card.dark : BUS_COLORS.card.light;
@@ -114,29 +123,32 @@ export default function PassengerActivityScreen() {
         </Text>
 
         <View style={[styles.routeCard, { backgroundColor: cardColor }]}>
-          {getBusStops().map((stop, index, arr) => (
-            <View key={stop.id} style={styles.stopItem}>
-              <View style={styles.stopIndicator}>
-                <View
-                  style={[
-                    styles.stopDot,
-                    { backgroundColor: secondaryTextColor },
-                  ]}
-                />
-                {index < arr.length - 1 && (
-                  <View style={[styles.stopLine, { backgroundColor: secondaryTextColor }]} />
-                )}
+          {getBusStops().map((stop, index, arr) => {
+            const stopStudentCount = studentCountsByStop.get(stop.id) ?? 0;
+            return (
+              <View key={stop.id} style={styles.stopItem}>
+                <View style={styles.stopIndicator}>
+                  <View
+                    style={[
+                      styles.stopDot,
+                      { backgroundColor: secondaryTextColor },
+                    ]}
+                  />
+                  {index < arr.length - 1 && (
+                    <View style={[styles.stopLine, { backgroundColor: secondaryTextColor }]} />
+                  )}
+                </View>
+                <View style={styles.stopInfo}>
+                  <Text style={[styles.stopName, { color: textColor }]}>
+                    {stop.name}
+                  </Text>
+                  <Text style={[styles.stopStudents, { color: secondaryTextColor }]}>
+                    {stopStudentCount} student{stopStudentCount !== 1 ? 's' : ''}
+                  </Text>
+                </View>
               </View>
-              <View style={styles.stopInfo}>
-                <Text style={[styles.stopName, { color: textColor }]}>
-                  {stop.name}
-                </Text>
-                <Text style={[styles.stopStudents, { color: secondaryTextColor }]}>
-                  {stop.students.length} student{stop.students.length !== 1 ? 's' : ''}
-                </Text>
-              </View>
-            </View>
-          ))}
+            );
+          })}
         </View>
       </View>
 
