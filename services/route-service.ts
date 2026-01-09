@@ -113,9 +113,9 @@ export function getStopFromRoute(
  * Get ordered stops for a route
  * Returns stops in the order they should be visited
  */
-export function getOrderedStops(route: Route): BusStopDefinition[] {
+export function getOrderedStops(route: Route): readonly BusStopDefinition[] {
   // Stops are already ordered in the route definition
-  return [...route.stops];
+  return route.stops;
 }
 
 /**
