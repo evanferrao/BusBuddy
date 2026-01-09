@@ -507,7 +507,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
       await TripService.sendWaitRequest(tripId, userId, preferredStopId);
       setHasSentWaitRequest(true);
       
-      // Also send mock notification for backward compatibility
+      // Send mock notification for UI display (uses first mock student for demo)
+      // In production, notifications would be derived from Firestore waitRequests
       MockData.sendStudentNotification('student-1', 'wait');
       setNotifications(MockData.getNotifications());
     } catch (error) {
@@ -530,7 +531,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
       setHasMarkedAbsence(true);
       setHasSentWaitRequest(false); // Per spec: Absence disables wait requests
       
-      // Also send mock notification for backward compatibility
+      // Send mock notification for UI display (uses first mock student for demo)
+      // In production, notifications would be derived from Firestore absences
       MockData.sendStudentNotification('student-1', 'skip');
       setNotifications(MockData.getNotifications());
     } catch (error) {
