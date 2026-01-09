@@ -11,12 +11,12 @@ import { getBusStops } from '@/services/mock-data';
 import { StudentNotification } from '@/types';
 import React from 'react';
 import {
-  RefreshControl,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TouchableOpacity,
-  View,
+    RefreshControl,
+    ScrollView,
+    StyleSheet,
+    Text,
+    TouchableOpacity,
+    View,
 } from 'react-native';
 
 export default function PassengerActivityScreen() {
@@ -183,8 +183,6 @@ function NotificationItem({
         <Text style={{ fontSize: 24 }}>
           {notification.type === 'wait' && '⏳'}
           {notification.type === 'skip' && '❌'}
-          {notification.type === 'running_late' && '🏃'}
-          {notification.type === 'ready' && '✅'}
         </Text>
       </View>
       

@@ -9,7 +9,8 @@ export const STORAGE_KEYS = {
   USER_ROLE: '@bus_buddy_user_role',
   USER_ID: '@bus_buddy_user_id',
   USER_NAME: '@bus_buddy_user_name',
-  BUS_ROUTE_ID: '@bus_buddy_bus_route_id',
+  BUS_ID: '@bus_buddy_bus_id',
+  PREFERRED_STOP_ID: '@bus_buddy_preferred_stop_id',
   DRIVER_DATA: '@bus_buddy_driver_data',
   STUDENT_DATA: '@bus_buddy_student_data',
 } as const;
@@ -26,34 +27,59 @@ export const LOCATION_CONFIG = {
 export const ARRIVAL_THRESHOLDS = {
   APPROACHING: 500, // Show "approaching" when within 500m
   ARRIVED: 50, // Show "arrived" when within 50m
-  WAITING_TIME: 120, // Wait 2 minutes at stop by default (in seconds)
 } as const;
 
-// Notification types with labels and colors
+// ============================================
+// STOP COLOR CONFIGURATION (Per Specification)
+// ============================================
+
+// Stop timing thresholds (in seconds)
+export const STOP_TIMING = {
+  RED_DURATION: 300,        // 5 minutes - standard waiting window
+  YELLOW_DURATION: 420,     // 7 minutes - extended wait with requests
+} as const;
+
+// Stop color definitions for UI (derived client-side, NEVER stored)
+export const STOP_COLOR_CONFIG = {
+  GREY: {
+    label: 'All Absent',
+    description: 'All passengers at this stop are absent',
+    color: '#8E8E93',     // System gray
+    canSkip: true,
+  },
+  RED: {
+    label: 'Waiting',
+    description: 'Standard waiting window (0-5 min)',
+    color: '#FF3B30',     // System red
+    canSkip: false,
+  },
+  YELLOW: {
+    label: 'Extended Wait',
+    description: 'Wait requests active (5-7 min)',
+    color: '#FFCC00',     // System yellow
+    canSkip: false,
+  },
+  GREEN: {
+    label: 'Ready',
+    description: 'In transit or stop completed',
+    color: '#34C759',     // System green
+    canSkip: true,
+  },
+} as const;
+
+// Notification types with labels and colors (simplified per spec)
 export const NOTIFICATION_CONFIG = {
   wait: {
-    label: 'Please Wait',
-    description: "I'm coming, please wait a moment!",
+    label: 'Wait for Me',
+    description: "I'm coming, please wait!",
     color: '#FF9500',
     icon: 'clock.fill',
   },
   skip: {
-    label: 'Skip Me Today',
+    label: 'Absent Today',
     description: "I won't be taking the bus today",
     color: '#FF3B30',
     icon: 'xmark.circle.fill',
-  },
-  running_late: {
-    label: 'Running Late',
-    description: "I'm running a few minutes late",
-    color: '#FFCC00',
-    icon: 'figure.run',
-  },
-  ready: {
-    label: 'Ready & Waiting',
-    description: "I'm at the stop, ready to board",
-    color: '#34C759',
-    icon: 'checkmark.circle.fill',
   },
 } as const;
 
@@ -68,7 +94,7 @@ export const STUDENT_STATUS_CONFIG = {
     color: '#34C759',
   },
   skipping: {
-    label: 'Skipping',
+    label: 'Absent',
     color: '#FF3B30',
   },
   onboard: {
@@ -89,6 +115,7 @@ export const BUS_COLORS = {
   danger: '#FF3B30', // Red
   warning: '#FFCC00', // Yellow
   info: '#5856D6', // Purple
+  grey: '#8E8E93', // Grey for absent stops
   background: {
     light: '#F2F2F7',
     dark: '#1C1C1E',

@@ -1,16 +1,20 @@
 /**
  * Student Dashboard
  * 
- * Main screen for students showing:
+ * Main screen for passengers showing:
  * - Bus location and ETA
- * - Quick action buttons to notify driver
- * - Route information
+ * - Quick action buttons: "Wait for Me" and "Absent Today"
+ * 
+ * Per specification:
+ * - Passengers can request wait or mark absence
+ * - Actions are trip-scoped (reset daily)
+ * - Absence disables wait requests for that trip
  */
 
 import {
     ARRIVAL_THRESHOLDS,
     BUS_COLORS,
-    NOTIFICATION_CONFIG,
+    NOTIFICATION_CONFIG
 } from '@/constants/bus-tracker';
 import { useApp } from '@/context/app-context';
 import { useColorScheme } from '@/hooks/use-color-scheme';
@@ -28,8 +32,9 @@ import {
     View,
 } from 'react-native';
 
-// Student's stop location (mock - in real app this would be from user profile)
+// Student's stop (from user profile in production)
 const MY_STOP = {
+  id: 'stop_1',
   name: 'Ganesh Nagar',
   latitude: 26.9124,
   longitude: 75.7873,
@@ -42,6 +47,10 @@ export default function StudentDashboard() {
     isDriverActive,
     sendNotification,
     refreshBusLocation,
+    hasMarkedAbsence,
+    hasSentWaitRequest,
+    preferredStopId,
+    activeTrip,
   } = useApp();
   
   const colorScheme = useColorScheme();
@@ -104,10 +113,28 @@ export default function StudentDashboard() {
     setRefreshing(false);
   };
 
+  /**
+   * Handle sending notification to driver
+   * Per spec:
+   * - "Wait for Me" enabled if: not marked absent, at current stop, bus at stop, within 7 min
+   * - "Absent Today" enabled if: trip active, not already marked absent
+   */
   const handleSendNotification = (type: NotificationType) => {
+    // Check if action is allowed per specification
+    if (type === 'wait' && hasMarkedAbsence) {
+      Alert.alert('Cannot Request Wait', 'You have already marked yourself absent for today.');
+      return;
+    }
+    
+    if (type === 'skip' && hasMarkedAbsence) {
+      Alert.alert('Already Marked Absent', 'You have already marked yourself absent for today.');
+      return;
+    }
+    
+    const config = NOTIFICATION_CONFIG[type];
     Alert.alert(
-      NOTIFICATION_CONFIG[type].label,
-      `Send "${NOTIFICATION_CONFIG[type].description}" to the driver?`,
+      config.label,
+      `Send "${config.description}" to the driver?`,
       [
         { text: 'Cancel', style: 'cancel' },
         {
@@ -115,7 +142,12 @@ export default function StudentDashboard() {
           onPress: () => {
             sendNotification(type);
             setLastSentNotification(type);
-            Alert.alert('Sent!', 'Your notification has been sent to the driver.');
+            
+            if (type === 'skip') {
+              Alert.alert('Marked Absent', 'The driver has been notified you won\'t be taking the bus today.');
+            } else {
+              Alert.alert('Sent!', 'The driver has been notified to wait for you.');
+            }
           },
         },
       ]
@@ -206,13 +238,15 @@ export default function StudentDashboard() {
         )}
       </View>
 
-      {/* Quick Actions */}
+      {/* Quick Actions - Per Spec: Wait for Me and Absent Today only */}
       <View style={styles.section}>
         <Text style={[styles.sectionTitle, { color: textColor }]}>
           Notify Driver
         </Text>
         <Text style={[styles.sectionSubtitle, { color: secondaryTextColor }]}>
-          Let the driver know your status
+          {hasMarkedAbsence 
+            ? 'You are marked absent for today' 
+            : 'Let the driver know your status'}
         </Text>
 
         <View style={styles.actionsGrid}>
@@ -222,7 +256,8 @@ export default function StudentDashboard() {
             label="Wait for Me"
             description="I'm coming!"
             color={NOTIFICATION_CONFIG.wait.color}
-            isActive={lastSentNotification === 'wait'}
+            isActive={hasSentWaitRequest}
+            isDisabled={hasMarkedAbsence}
             onPress={() => handleSendNotification('wait')}
             cardColor={cardColor}
             textColor={textColor}
@@ -230,10 +265,11 @@ export default function StudentDashboard() {
           <ActionButton
             type="skip"
             emoji="❌"
-            label="Skip Today"
-            description="Not coming"
+            label="Absent Today"
+            description="Not taking bus"
             color={NOTIFICATION_CONFIG.skip.color}
-            isActive={lastSentNotification === 'skip'}
+            isActive={hasMarkedAbsence}
+            isDisabled={hasMarkedAbsence}
             onPress={() => handleSendNotification('skip')}
             cardColor={cardColor}
             textColor={textColor}
@@ -245,7 +281,7 @@ export default function StudentDashboard() {
       <View style={[styles.tipCard, { backgroundColor: cardColor }]}>
         <Text style={styles.tipEmoji}>💡</Text>
         <Text style={[styles.tipText, { color: secondaryTextColor }]}>
-          Tip: Use "Wait for Me" if you're running late, or "Skip Today" if you won't be taking the bus!
+          Tip: Use "Wait for Me" to request extra time, or "Absent Today" if you won't be taking the bus. Actions reset daily with each new trip.
         </Text>
       </View>
     </ScrollView>
@@ -263,6 +299,7 @@ function ActionButton({
   onPress,
   cardColor,
   textColor,
+  isDisabled = false,
 }: {
   type: NotificationType;
   emoji: string;
@@ -270,6 +307,7 @@ function ActionButton({
   description: string;
   color: string;
   isActive: boolean;
+  isDisabled?: boolean;
   onPress: () => void;
   cardColor: string;
   textColor: string;
@@ -280,16 +318,18 @@ function ActionButton({
         styles.actionButton,
         { backgroundColor: cardColor },
         isActive && { borderColor: color, borderWidth: 2 },
+        isDisabled && styles.actionButtonDisabled,
       ]}
       onPress={onPress}
-      activeOpacity={0.8}
+      activeOpacity={isDisabled ? 1 : 0.8}
+      disabled={isDisabled}
     >
-      <Text style={styles.actionEmoji}>{emoji}</Text>
-      <Text style={[styles.actionLabel, { color: textColor }]}>{label}</Text>
-      <Text style={[styles.actionDescription, { color }]}>{description}</Text>
+      <Text style={[styles.actionEmoji, isDisabled && styles.actionEmojiDisabled]}>{emoji}</Text>
+      <Text style={[styles.actionLabel, { color: isDisabled ? '#999' : textColor }]}>{label}</Text>
+      <Text style={[styles.actionDescription, { color: isDisabled ? '#999' : color }]}>{description}</Text>
       {isActive && (
         <View style={[styles.sentBadge, { backgroundColor: color }]}>
-          <Text style={styles.sentText}>Sent</Text>
+          <Text style={styles.sentText}>{type === 'skip' ? 'Absent' : 'Sent'}</Text>
         </View>
       )}
     </TouchableOpacity>
@@ -435,9 +475,15 @@ const styles = StyleSheet.create({
     shadowRadius: 8,
     elevation: 3,
   },
+  actionButtonDisabled: {
+    opacity: 0.5,
+  },
   actionEmoji: {
     fontSize: 32,
     marginBottom: 8,
+  },
+  actionEmojiDisabled: {
+    opacity: 0.5,
   },
   actionLabel: {
     fontSize: 14,

@@ -4,6 +4,7 @@
  * Handles Firestore database operations including:
  * - User profile management
  * - User role storage and retrieval
+ * - Bus assignment for passengers
  */
 
 import { UserRole } from '@/types';
@@ -19,11 +20,14 @@ import { db } from './firebase-config';
 
 const usersCollection = collection(db, 'users');
 
+// User profile matching Firestore data model specification
 export interface UserProfile {
   uid: string;
   email: string;
   displayName: string;
   role: UserRole;
+  busId: string;                    // Bus assigned to user
+  preferredStopId?: string;         // Passengers only - their pickup stop
   createdAt: number;
   updatedAt: number;
 }
@@ -63,12 +67,16 @@ export const getUserData = async (userId: string): Promise<UserProfile | null> =
 
 /**
  * Create a new user profile after registration
+ * For passengers, busId and preferredStopId should be set after registration
+ * For drivers, busId will be assigned by admin
  */
 export const createUserProfile = async (
   uid: string, 
   email: string, 
   displayName: string, 
-  role: UserRole
+  role: UserRole,
+  busId: string = 'bus_1',              // Default bus for demo
+  preferredStopId?: string              // Only for passengers
 ): Promise<UserProfile> => {
   const now = Date.now();
   const userProfile: UserProfile = {
@@ -76,6 +84,8 @@ export const createUserProfile = async (
     email,
     displayName,
     role,
+    busId,
+    ...(role === 'student' && preferredStopId ? { preferredStopId } : {}),
     createdAt: now,
     updatedAt: now,
   };
@@ -134,6 +144,40 @@ export const updateUserDisplayName = async (userId: string, displayName: string)
     console.log('User display name updated');
   } catch (error) {
     console.error('Error updating display name:', error);
+    throw error;
+  }
+};
+
+/**
+ * Update passenger's preferred stop
+ */
+export const updatePreferredStop = async (userId: string, preferredStopId: string): Promise<void> => {
+  try {
+    const userRef = doc(db, 'users', userId);
+    await updateDoc(userRef, {
+      preferredStopId,
+      updatedAt: Date.now(),
+    });
+    console.log('Preferred stop updated');
+  } catch (error) {
+    console.error('Error updating preferred stop:', error);
+    throw error;
+  }
+};
+
+/**
+ * Update user's assigned bus
+ */
+export const updateUserBus = async (userId: string, busId: string): Promise<void> => {
+  try {
+    const userRef = doc(db, 'users', userId);
+    await updateDoc(userRef, {
+      busId,
+      updatedAt: Date.now(),
+    });
+    console.log('User bus updated');
+  } catch (error) {
+    console.error('Error updating user bus:', error);
     throw error;
   }
 };

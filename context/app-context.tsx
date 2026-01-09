@@ -3,6 +3,11 @@
  * 
  * Global state management for the Bus Buddy app.
  * Provides user authentication, role, tracking state, and notifications across all screens.
+ * 
+ * Per specification:
+ * - Trips are the single source of truth for real-time state
+ * - Colors are derived client-side only, never stored
+ * - Wait requests and absences are trip-scoped
  */
 
 import * as AuthService from '@/services/auth';
@@ -10,7 +15,7 @@ import * as FirestoreService from '@/services/firestore';
 import * as LocationService from '@/services/location';
 import * as MockData from '@/services/mock-data';
 import * as StorageService from '@/services/storage';
-import { AuthUserData, Location, Student, StudentNotification, UserRole } from '@/types';
+import { AuthUserData, Location, NotificationType, StopState, Student, StudentNotification, Trip, UserRole } from '@/types';
 import React, { createContext, ReactNode, useCallback, useContext, useEffect, useState } from 'react';
 
 interface AppContextType {
@@ -22,15 +27,25 @@ interface AppContextType {
   userRole: UserRole;
   userName: string | null;
   userId: string | null;
+  busId: string | null;
+  preferredStopId: string | null;
   isLoading: boolean;
   
   // Location tracking (driver)
   isTracking: boolean;
   currentLocation: Location | null;
   
+  // Trip state
+  activeTrip: Trip | null;
+  currentStopState: StopState | null;
+  
   // Bus location (student view)
   busLocation: Location | null;
   isDriverActive: boolean;
+  
+  // Passenger state
+  hasMarkedAbsence: boolean;
+  hasSentWaitRequest: boolean;
   
   // Notifications
   notifications: StudentNotification[];
@@ -48,7 +63,7 @@ interface AppContextType {
   setRole: (role: UserRole, name: string) => Promise<void>;
   startTracking: () => Promise<boolean>;
   stopTracking: () => void;
-  sendNotification: (type: 'wait' | 'skip' | 'running_late' | 'ready', message?: string) => void;
+  sendNotification: (type: NotificationType, message?: string) => void;
   markNotificationRead: (id: string) => void;
   clearAllNotifications: () => void;
   refreshBusLocation: () => void;
@@ -66,6 +81,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [userRole, setUserRole] = useState<UserRole>(null);
   const [userName, setUserName] = useState<string | null>(null);
   const [userId, setUserId] = useState<string | null>(null);
+  const [busId, setBusId] = useState<string | null>('bus_1'); // Default bus for demo
+  const [preferredStopId, setPreferredStopId] = useState<string | null>('stop_1'); // Default stop for demo
   const [isLoading, setIsLoading] = useState(true);
   
   // Location state
@@ -73,6 +90,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [currentLocation, setCurrentLocation] = useState<Location | null>(null);
   const [busLocation, setBusLocation] = useState<Location | null>(null);
   const [isDriverActive, setIsDriverActive] = useState(false);
+  
+  // Trip state
+  const [activeTrip, setActiveTrip] = useState<Trip | null>(null);
+  const [currentStopState, setCurrentStopState] = useState<StopState | null>(null);
+  
+  // Passenger action state (per spec: trip-scoped)
+  const [hasMarkedAbsence, setHasMarkedAbsence] = useState(false);
+  const [hasSentWaitRequest, setHasSentWaitRequest] = useState(false);
   
   // Notifications
   const [notifications, setNotifications] = useState<StudentNotification[]>([]);
@@ -282,7 +307,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   };
 
   const sendNotification = useCallback((
-    type: 'wait' | 'skip' | 'running_late' | 'ready',
+    type: NotificationType,
     message?: string
   ) => {
     if (!userId) return;
@@ -291,6 +316,15 @@ export function AppProvider({ children }: { children: ReactNode }) {
       const studentId = 'student-1';
       MockData.sendStudentNotification(studentId, type, message);
       setNotifications(MockData.getNotifications());
+      
+      // Track what the passenger has sent (per spec: trip-scoped)
+      if (type === 'wait') {
+        setHasSentWaitRequest(true);
+      } else if (type === 'skip') {
+        setHasMarkedAbsence(true);
+        // Per spec: Absence disables wait requests for that trip
+        setHasSentWaitRequest(false);
+      }
     } catch (error) {
       console.error('Error sending notification:', error);
     }
@@ -326,11 +360,17 @@ export function AppProvider({ children }: { children: ReactNode }) {
         userRole,
         userName,
         userId,
+        busId,
+        preferredStopId,
         isLoading,
         isTracking,
         currentLocation,
+        activeTrip,
+        currentStopState,
         busLocation,
         isDriverActive,
+        hasMarkedAbsence,
+        hasSentWaitRequest,
         notifications,
         unreadCount,
         students,

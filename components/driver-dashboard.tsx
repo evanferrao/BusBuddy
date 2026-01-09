@@ -2,19 +2,28 @@
  * Driver Dashboard
  * 
  * Main screen for drivers showing:
- * - Location tracking toggle
- * - Current speed and location info
- * - Student notifications
- * - List of students on route
+ * - Location tracking toggle (starts/ends trip)
+ * - Current stop with color indicator
+ * - Countdown timer for RED/YELLOW states
+ * - Student notifications (wait requests and absences)
+ * - Route stops with color-coded status
+ * 
+ * Per specification:
+ * - Colors are derived client-side only
+ * - GREY: all passengers absent (can skip)
+ * - RED: standard waiting (0-5 min)
+ * - YELLOW: extended wait with requests (5-7 min)
+ * - GREEN: in transit or stop completed
  */
 
 import { IconSymbol } from '@/components/ui/icon-symbol';
-import { BUS_COLORS, NOTIFICATION_CONFIG, STUDENT_STATUS_CONFIG } from '@/constants/bus-tracker';
+import { BUS_COLORS, NOTIFICATION_CONFIG, STOP_COLOR_CONFIG, STOP_TIMING, STUDENT_STATUS_CONFIG } from '@/constants/bus-tracker';
 import { useApp } from '@/context/app-context';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { formatHeading, formatSpeed } from '@/services/location';
-import { Student, StudentNotification } from '@/types';
-import React, { useState } from 'react';
+import { getBusStops } from '@/services/mock-data';
+import { StopColor, Student, StudentNotification } from '@/types';
+import React, { useEffect, useState } from 'react';
 import {
     Alert,
     RefreshControl,
@@ -42,25 +51,82 @@ export default function DriverDashboard() {
   const colorScheme = useColorScheme();
   const isDark = colorScheme === 'dark';
   const [refreshing, setRefreshing] = useState(false);
+  
+  // Mock current stop state for demo
+  const [currentStopIndex, setCurrentStopIndex] = useState(0);
+  const [stopArrivedAt, setStopArrivedAt] = useState<number | null>(null);
+  const [elapsedSeconds, setElapsedSeconds] = useState(0);
+  
+  const busStops = getBusStops();
+  const currentStop = busStops[currentStopIndex];
 
   const backgroundColor = isDark ? BUS_COLORS.background.dark : BUS_COLORS.background.light;
   const cardColor = isDark ? BUS_COLORS.card.dark : BUS_COLORS.card.light;
   const textColor = isDark ? BUS_COLORS.text.dark : BUS_COLORS.text.light;
   const secondaryTextColor = isDark ? BUS_COLORS.textSecondary.dark : BUS_COLORS.textSecondary.light;
 
+  // Timer for tracking elapsed time at stop
+  useEffect(() => {
+    if (isTracking && stopArrivedAt) {
+      const interval = setInterval(() => {
+        setElapsedSeconds(Math.floor((Date.now() - stopArrivedAt) / 1000));
+      }, 1000);
+      return () => clearInterval(interval);
+    }
+  }, [isTracking, stopArrivedAt]);
+
+  // Compute current stop color (per specification)
+  const computeStopColor = (): StopColor => {
+    if (!isTracking || stopArrivedAt === null) return 'GREEN';
+    
+    // Check if all passengers at this stop are absent
+    const stopNotifications = notifications.filter(n => 
+      n.stopName === currentStop?.name && n.type === 'skip'
+    );
+    const stopStudents = students.filter(s => s.stopName === currentStop?.name);
+    const allAbsent = stopStudents.length > 0 && stopNotifications.length >= stopStudents.length;
+    
+    if (allAbsent) return 'GREY';
+    
+    // Check time-based colors
+    if (elapsedSeconds <= STOP_TIMING.RED_DURATION) return 'RED';
+    
+    // Check for wait requests
+    const waitRequests = notifications.filter(n => 
+      n.stopName === currentStop?.name && n.type === 'wait'
+    );
+    if (waitRequests.length > 0 && elapsedSeconds <= STOP_TIMING.YELLOW_DURATION) return 'YELLOW';
+    
+    return 'GREEN';
+  };
+  
+  const currentStopColor = computeStopColor();
+  const stopColorConfig = STOP_COLOR_CONFIG[currentStopColor];
+
   const handleToggleTracking = async () => {
     if (isTracking) {
       Alert.alert(
-        'Stop Tracking',
-        'Are you sure you want to stop sharing your location?',
+        'End Trip',
+        'Are you sure you want to end this trip?',
         [
           { text: 'Cancel', style: 'cancel' },
-          { text: 'Stop', style: 'destructive', onPress: stopTracking },
+          { 
+            text: 'End Trip', 
+            style: 'destructive', 
+            onPress: () => {
+              stopTracking();
+              setStopArrivedAt(null);
+              setElapsedSeconds(0);
+            }
+          },
         ]
       );
     } else {
       const success = await startTracking();
-      if (!success) {
+      if (success) {
+        // Simulate arriving at first stop
+        setStopArrivedAt(Date.now());
+      } else {
         Alert.alert(
           'Location Permission Required',
           'Please enable location access to share your location with students.',
@@ -69,10 +135,22 @@ export default function DriverDashboard() {
       }
     }
   };
+  
+  const handleArriveAtStop = () => {
+    setStopArrivedAt(Date.now());
+    setElapsedSeconds(0);
+  };
+  
+  const handleDepartFromStop = () => {
+    if (currentStopIndex < busStops.length - 1) {
+      setCurrentStopIndex(currentStopIndex + 1);
+      setStopArrivedAt(null);
+      setElapsedSeconds(0);
+    }
+  };
 
   const onRefresh = async () => {
     setRefreshing(true);
-    // Simulate refresh
     await new Promise(resolve => setTimeout(resolve, 1000));
     setRefreshing(false);
   };
@@ -80,6 +158,19 @@ export default function DriverDashboard() {
   const formatTime = (timestamp: number) => {
     const date = new Date(timestamp);
     return date.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
+  };
+  
+  const formatCountdown = (seconds: number): string => {
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${mins}:${String(secs).padStart(2, '0')}`;
+  };
+  
+  const getRemainingTime = (): number | null => {
+    if (currentStopColor === 'GREY' || currentStopColor === 'GREEN') return null;
+    if (currentStopColor === 'RED') return Math.max(0, STOP_TIMING.RED_DURATION - elapsedSeconds);
+    if (currentStopColor === 'YELLOW') return Math.max(0, STOP_TIMING.YELLOW_DURATION - elapsedSeconds);
+    return null;
   };
 
   return (
@@ -101,10 +192,10 @@ export default function DriverDashboard() {
         <View style={styles.trackingHeader}>
           <View style={styles.trackingInfo}>
             <Text style={[styles.trackingLabel, { color: isTracking ? '#fff' : secondaryTextColor }]}>
-              Location Sharing
+              Trip Status
             </Text>
             <Text style={[styles.trackingStatus, { color: isTracking ? '#fff' : textColor }]}>
-              {isTracking ? '● Live' : '○ Off'}
+              {isTracking ? '● Active Trip' : '○ No Active Trip'}
             </Text>
           </View>
           <TouchableOpacity
@@ -115,7 +206,7 @@ export default function DriverDashboard() {
             onPress={handleToggleTracking}
           >
             <Text style={styles.trackingButtonText}>
-              {isTracking ? 'Stop' : 'Start'}
+              {isTracking ? 'End Trip' : 'Start Trip'}
             </Text>
           </TouchableOpacity>
         </View>
@@ -145,10 +236,77 @@ export default function DriverDashboard() {
 
         {!isTracking && (
           <Text style={[styles.trackingHint, { color: secondaryTextColor }]}>
-            Start sharing to let students track your bus
+            Start a trip to share your location with students
           </Text>
         )}
       </View>
+
+      {/* Current Stop Status Card - Only shown when trip is active */}
+      {isTracking && currentStop && (
+        <View style={[styles.stopStatusCard, { backgroundColor: stopColorConfig.color }]}>
+          <View style={styles.stopStatusHeader}>
+            <View>
+              <Text style={styles.stopStatusLabel}>Current Stop</Text>
+              <Text style={styles.stopStatusName}>{currentStop.name}</Text>
+            </View>
+            <View style={[styles.stopColorBadge, { backgroundColor: 'rgba(255,255,255,0.3)' }]}>
+              <Text style={styles.stopColorText}>{stopColorConfig.label}</Text>
+            </View>
+          </View>
+          
+          {/* Countdown Timer */}
+          {(currentStopColor === 'RED' || currentStopColor === 'YELLOW') && (
+            <View style={styles.countdownContainer}>
+              <Text style={styles.countdownLabel}>
+                {currentStopColor === 'RED' ? 'Standard wait' : 'Extended wait'}
+              </Text>
+              <Text style={styles.countdownTimer}>
+                {formatCountdown(getRemainingTime() || 0)}
+              </Text>
+            </View>
+          )}
+          
+          {/* All Absent Message */}
+          {currentStopColor === 'GREY' && (
+            <View style={styles.allAbsentContainer}>
+              <Text style={styles.allAbsentText}>
+                All students at this stop are absent
+              </Text>
+              <Text style={styles.allAbsentHint}>You may skip this stop</Text>
+            </View>
+          )}
+          
+          {/* Wait Request Count */}
+          {currentStopColor === 'YELLOW' && (
+            <View style={styles.waitRequestInfo}>
+              <Text style={styles.waitRequestText}>
+                {notifications.filter(n => n.stopName === currentStop.name && n.type === 'wait').length} wait request(s)
+              </Text>
+            </View>
+          )}
+          
+          {/* Action Buttons */}
+          <View style={styles.stopActions}>
+            {!stopArrivedAt ? (
+              <TouchableOpacity
+                style={styles.stopActionButton}
+                onPress={handleArriveAtStop}
+              >
+                <Text style={styles.stopActionText}>Arrive at Stop</Text>
+              </TouchableOpacity>
+            ) : (
+              <TouchableOpacity
+                style={[styles.stopActionButton, (currentStopColor === 'GREY' || currentStopColor === 'GREEN') && styles.stopActionButtonHighlight]}
+                onPress={handleDepartFromStop}
+              >
+                <Text style={styles.stopActionText}>
+                  {currentStopColor === 'GREY' ? 'Skip Stop' : 'Depart'}
+                </Text>
+              </TouchableOpacity>
+            )}
+          </View>
+        </View>
+      )}
 
       {/* Notifications Section */}
       <View style={styles.section}>
@@ -169,7 +327,7 @@ export default function DriverDashboard() {
               No notifications yet
             </Text>
             <Text style={[styles.emptySubtext, { color: secondaryTextColor }]}>
-              Student messages will appear here
+              Wait requests and absences will appear here
             </Text>
           </View>
         ) : (
@@ -239,8 +397,6 @@ function NotificationCard({
         <Text style={{ fontSize: 20 }}>
           {notification.type === 'wait' && '⏳'}
           {notification.type === 'skip' && '❌'}
-          {notification.type === 'running_late' && '🏃'}
-          {notification.type === 'ready' && '✅'}
         </Text>
       </View>
       <View style={styles.notificationContent}>
@@ -480,6 +636,105 @@ const styles = StyleSheet.create({
   },
   statusText: {
     fontSize: 12,
+    fontWeight: '600',
+  },
+  // Stop Status Card Styles
+  stopStatusCard: {
+    borderRadius: 20,
+    padding: 20,
+    marginBottom: 24,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 12,
+    elevation: 5,
+  },
+  stopStatusHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    marginBottom: 16,
+  },
+  stopStatusLabel: {
+    color: 'rgba(255,255,255,0.8)',
+    fontSize: 14,
+    marginBottom: 4,
+  },
+  stopStatusName: {
+    color: '#fff',
+    fontSize: 24,
+    fontWeight: 'bold',
+  },
+  stopColorBadge: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 8,
+  },
+  stopColorText: {
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  countdownContainer: {
+    alignItems: 'center',
+    marginBottom: 16,
+    padding: 16,
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    borderRadius: 12,
+  },
+  countdownLabel: {
+    color: 'rgba(255,255,255,0.8)',
+    fontSize: 14,
+    marginBottom: 4,
+  },
+  countdownTimer: {
+    color: '#fff',
+    fontSize: 48,
+    fontWeight: 'bold',
+  },
+  allAbsentContainer: {
+    alignItems: 'center',
+    marginBottom: 16,
+    padding: 16,
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    borderRadius: 12,
+  },
+  allAbsentText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '600',
+    marginBottom: 4,
+  },
+  allAbsentHint: {
+    color: 'rgba(255,255,255,0.8)',
+    fontSize: 14,
+  },
+  waitRequestInfo: {
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  waitRequestText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '500',
+  },
+  stopActions: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  stopActionButton: {
+    flex: 1,
+    backgroundColor: 'rgba(255,255,255,0.3)',
+    paddingVertical: 14,
+    borderRadius: 12,
+    alignItems: 'center',
+  },
+  stopActionButtonHighlight: {
+    backgroundColor: 'rgba(255,255,255,0.4)',
+  },
+  stopActionText: {
+    color: '#fff',
+    fontSize: 16,
     fontWeight: '600',
   },
 });
