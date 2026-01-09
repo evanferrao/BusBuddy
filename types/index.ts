@@ -41,13 +41,21 @@ export interface UserProfile {
   updatedAt: number;
 }
 
-// Bus stop definition (static, stored in buses collection)
+// Bus stop definition (static, stored in routes/buses collection)
 export interface BusStopDefinition {
   stopId: string;
   name: string;
   lat: number;
   lng: number;
   scheduledTime: string;            // e.g., "07:45"
+}
+
+// Route document stored in Firestore routes/{routeId}
+// Contains static route data that never changes during a trip
+export interface Route {
+  routeId: string;
+  busNo: string;                    // e.g., "1"
+  stops: BusStopDefinition[];       // Static route definition
 }
 
 // Bus document stored in Firestore buses/{busId}

@@ -32,29 +32,47 @@ import {
     View,
 } from 'react-native';
 
-// Student's stop (from user profile in production)
-const MY_STOP = {
-  id: 'stop_1',
-  name: 'Ganesh Nagar',
-  latitude: 26.9124,
-  longitude: 75.7873,
-};
-
 export default function StudentDashboard() {
   const {
     userName,
     busLocation,
     isDriverActive,
     sendNotification,
+    sendWaitRequest,
+    markAbsent,
     refreshBusLocation,
     hasMarkedAbsence,
     hasSentWaitRequest,
     preferredStopId,
     activeTrip,
+    route,
   } = useApp();
   
   const colorScheme = useColorScheme();
   const isDark = colorScheme === 'dark';
+
+  // Get student's stop from route data (per specification: users.preferredStopId)
+  // Falls back to default if route not loaded
+  const myStop = React.useMemo(() => {
+    if (route && preferredStopId) {
+      const stop = route.stops.find(s => s.stopId === preferredStopId);
+      if (stop) {
+        return {
+          id: stop.stopId,
+          name: stop.name,
+          latitude: stop.lat,
+          longitude: stop.lng,
+        };
+      }
+    }
+    // Default fallback
+    return {
+      id: 'stop_1',
+      name: 'Ganesh Nagar',
+      latitude: 26.9124,
+      longitude: 75.7873,
+    };
+  }, [route, preferredStopId]);
   const [refreshing, setRefreshing] = useState(false);
   const [lastSentNotification, setLastSentNotification] = useState<NotificationType | null>(null);
   const [pulseAnim] = useState(new Animated.Value(1));
@@ -91,15 +109,15 @@ export default function StudentDashboard() {
     ? calculateDistance(
         busLocation.latitude,
         busLocation.longitude,
-        MY_STOP.latitude,
-        MY_STOP.longitude
+        myStop.latitude,
+        myStop.longitude
       )
     : null;
 
   const eta = busLocation
     ? getEstimatedArrival(
         busLocation,
-        { ...MY_STOP, timestamp: Date.now() }
+        { ...myStop, timestamp: Date.now() }
       )
     : null;
 
@@ -119,7 +137,7 @@ export default function StudentDashboard() {
    * - "Wait for Me" enabled if: not marked absent, at current stop, bus at stop, within 7 min
    * - "Absent Today" enabled if: trip active, not already marked absent
    */
-  const handleSendNotification = (type: NotificationType) => {
+  const handleSendNotification = async (type: NotificationType) => {
     // Check if action is allowed per specification
     if (type === 'wait' && hasMarkedAbsence) {
       Alert.alert('Cannot Request Wait', 'You have already marked yourself absent for today.');
@@ -139,14 +157,23 @@ export default function StudentDashboard() {
         { text: 'Cancel', style: 'cancel' },
         {
           text: 'Send',
-          onPress: () => {
-            sendNotification(type);
-            setLastSentNotification(type);
-            
-            if (type === 'skip') {
-              Alert.alert('Marked Absent', 'The driver has been notified you won\'t be taking the bus today.');
-            } else {
-              Alert.alert('Sent!', 'The driver has been notified to wait for you.');
+          onPress: async () => {
+            try {
+              // Use real Firestore operations per specification
+              if (type === 'wait') {
+                await sendWaitRequest();
+                Alert.alert('Sent!', 'The driver has been notified to wait for you.');
+              } else if (type === 'skip') {
+                await markAbsent();
+                Alert.alert('Marked Absent', 'The driver has been notified you won\'t be taking the bus today.');
+              }
+              
+              // Also send legacy notification for backward compatibility
+              sendNotification(type);
+              setLastSentNotification(type);
+            } catch (error) {
+              console.error('Error sending notification:', error);
+              Alert.alert('Error', 'Failed to send notification. Please try again.');
             }
           },
         },
@@ -169,7 +196,7 @@ export default function StudentDashboard() {
         <Text style={[styles.greeting, { color: secondaryTextColor }]}>Hello,</Text>
         <Text style={[styles.userName, { color: textColor }]}>{userName || 'Student'}</Text>
         <Text style={[styles.stopInfo, { color: secondaryTextColor }]}>
-          📍 Your stop: {MY_STOP.name}
+          📍 Your stop: {myStop.name}
         </Text>
       </View>
 
