@@ -97,7 +97,7 @@ export const DEFAULT_BUSES: Bus[] = [
   {
     busId: 'bus_1',
     busNumber: 'Bus 1',
-    driverId: '',  // Will be set when driver is assigned
+    driverId: '',  // Empty until driver is assigned (will be set via admin or when driver logs in)
     activeTripId: null,
     stops: [
       {

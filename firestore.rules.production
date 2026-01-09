@@ -48,12 +48,13 @@ service cloud.firestore {
       // Anyone authenticated can read bus data
       allow read: if isAuthenticated();
       
-      // Only admins should create/update/delete buses
-      // For now, allow drivers to update activeTripId
-      allow update: if isDriver();
+      // Only drivers can update activeTripId field
+      allow update: if isDriver() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['activeTripId']);
       
-      // Creating/deleting should be admin-only (commented out for now)
-      // allow create, delete: if isAdmin();
+      // Creating/deleting buses should be admin-only
+      // TODO: Implement admin role checking
+      // For now, these operations are disabled
+      allow create, delete: if false;
     }
     
     // Trips collection

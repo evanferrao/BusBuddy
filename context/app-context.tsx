@@ -64,10 +64,10 @@ interface AppContextType {
   // Actions
   setRole: (role: UserRole, name: string) => Promise<void>;
   startTracking: () => Promise<boolean>;
-  stopTracking: () => void;
+  stopTracking: () => Promise<void>;
   arriveAtStop: (stopId: string) => Promise<void>;
   departFromStop: () => Promise<void>;
-  sendNotification: (type: NotificationType, message?: string) => void;
+  sendNotification: (type: NotificationType, message?: string) => Promise<void>;
   markNotificationRead: (id: string) => void;
   clearAllNotifications: () => void;
   refreshBusLocation: () => void;
@@ -246,16 +246,19 @@ export function AppProvider({ children }: { children: ReactNode }) {
         setWaitRequests(requests);
         
         // Generate notifications from wait requests
-        const waitNotifications: StudentNotification[] = requests.map((req, index) => ({
-          id: `wait-${req.passengerId}-${req.requestedAt}`,
-          studentId: req.passengerId,
-          studentName: `Student ${index + 1}`, // Would lookup from passengers list
-          stopId: req.stopId,
-          stopName: bus?.stops.find(s => s.stopId === req.stopId)?.name || req.stopId,
-          type: 'wait' as NotificationType,
-          timestamp: req.requestedAt,
-          isRead: false,
-        }));
+        const waitNotifications: StudentNotification[] = requests.map((req) => {
+          const passenger = passengers.find(p => p.uid === req.passengerId);
+          return {
+            id: `wait-${req.passengerId}-${req.requestedAt}`,
+            studentId: req.passengerId,
+            studentName: passenger?.displayName || 'Unknown Student',
+            stopId: req.stopId,
+            stopName: bus?.stops.find(s => s.stopId === req.stopId)?.name || req.stopId,
+            type: 'wait' as NotificationType,
+            timestamp: req.requestedAt,
+            isRead: false,
+          };
+        });
         
         setNotifications(prev => {
           // Merge with absence notifications
@@ -278,16 +281,19 @@ export function AppProvider({ children }: { children: ReactNode }) {
         setAbsences(absenceList);
         
         // Generate notifications from absences
-        const absenceNotifications: StudentNotification[] = absenceList.map((abs, index) => ({
-          id: `absence-${abs.passengerId}-${abs.markedAt}`,
-          studentId: abs.passengerId,
-          studentName: `Student ${index + 1}`, // Would lookup from passengers list
-          stopId: abs.stopId,
-          stopName: bus?.stops.find(s => s.stopId === abs.stopId)?.name || abs.stopId,
-          type: 'skip' as NotificationType,
-          timestamp: abs.markedAt,
-          isRead: false,
-        }));
+        const absenceNotifications: StudentNotification[] = absenceList.map((abs) => {
+          const passenger = passengers.find(p => p.uid === abs.passengerId);
+          return {
+            id: `absence-${abs.passengerId}-${abs.markedAt}`,
+            studentId: abs.passengerId,
+            studentName: passenger?.displayName || 'Unknown Student',
+            stopId: abs.stopId,
+            stopName: bus?.stops.find(s => s.stopId === abs.stopId)?.name || abs.stopId,
+            type: 'skip' as NotificationType,
+            timestamp: abs.markedAt,
+            isRead: false,
+          };
+        });
         
         setNotifications(prev => {
           // Merge with wait notifications
