@@ -194,6 +194,7 @@ export interface AppState {
   userId: string | null;
   userName: string | null;
   busId: string | null;
+  busRouteId: string | null;
   preferredStopId: string | null;
   onboardingComplete: boolean;
 }

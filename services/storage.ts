@@ -13,7 +13,9 @@ const defaultAppState: AppState = {
   userRole: null,
   userId: null,
   userName: null,
+  busId: null,
   busRouteId: null,
+  preferredStopId: null,
   onboardingComplete: false,
 };
 
