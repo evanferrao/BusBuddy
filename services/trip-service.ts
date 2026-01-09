@@ -13,8 +13,8 @@
 
 import {
     Absence,
-    Bus,
-    BusStopDefinition,
+    Route,
+    RouteStop,
     StopColor,
     StopState,
     Trip,
@@ -52,47 +52,47 @@ export const STOP_TIMING = {
 
 /**
  * Generate a trip ID based on bus and date
- * Format: trip_{busId}_{YYYY_MM_DD}
+ * Format: trip_{busNo}_{YYYY_MM_DD}
  */
-export function generateTripId(busId: string, date: Date = new Date()): string {
+export function generateTripId(busNo: string, date: Date = new Date()): string {
   const year = date.getFullYear();
   const month = String(date.getMonth() + 1).padStart(2, '0');
   const day = String(date.getDate()).padStart(2, '0');
-  return `trip_${busId}_${year}_${month}_${day}`;
+  return `trip_${busNo}_${year}_${month}_${day}`;
 }
 
 // ============================================
-// BUS OPERATIONS
+// ROUTE OPERATIONS
 // ============================================
 
 /**
- * Get bus by ID
+ * Get route by ID
  */
-export async function getBus(busId: string): Promise<Bus | null> {
+export async function getRoute(routeId: string): Promise<Route | null> {
   try {
-    const busRef = doc(db, 'buses', busId);
-    const busDoc = await getDoc(busRef);
-    if (busDoc.exists()) {
-      return busDoc.data() as Bus;
+    const routeRef = doc(db, 'routes', routeId);
+    const routeDoc = await getDoc(routeRef);
+    if (routeDoc.exists()) {
+      return routeDoc.data() as Route;
     }
     return null;
   } catch (error) {
-    console.error('Error fetching bus:', error);
+    console.error('Error fetching route:', error);
     throw error;
   }
 }
 
 /**
- * Subscribe to bus updates
+ * Subscribe to route updates
  */
-export function subscribeToBus(
-  busId: string,
-  callback: (bus: Bus | null) => void
+export function subscribeToRoute(
+  routeId: string,
+  callback: (route: Route | null) => void
 ): Unsubscribe {
-  const busRef = doc(db, 'buses', busId);
-  return onSnapshot(busRef, (doc) => {
+  const routeRef = doc(db, 'routes', routeId);
+  return onSnapshot(routeRef, (doc) => {
     if (doc.exists()) {
-      callback(doc.data() as Bus);
+      callback(doc.data() as Route);
     } else {
       callback(null);
     }
@@ -107,16 +107,18 @@ export function subscribeToBus(
  * Start a new trip (Driver only)
  */
 export async function startTrip(
-  busId: string,
+  routeId: string,
+  busNo: string,
   driverId: string,
   initialLocation: { lat: number; lng: number }
 ): Promise<Trip> {
-  const tripId = generateTripId(busId);
+  const tripId = generateTripId(busNo);
   const now = Date.now();
 
   const trip: Trip = {
     tripId,
-    busId,
+    busNo,
+    routeId,
     driverId,
     startedAt: now,
     currentStopId: null,
@@ -130,10 +132,6 @@ export async function startTrip(
     const tripRef = doc(db, 'trips', tripId);
     await setDoc(tripRef, trip);
 
-    // Update bus with active trip
-    const busRef = doc(db, 'buses', busId);
-    await updateDoc(busRef, { activeTripId: tripId });
-
     console.log('Trip started:', tripId);
     return trip;
   } catch (error) {
@@ -145,8 +143,9 @@ export async function startTrip(
 /**
  * End a trip (Driver only)
  */
-export async function endTrip(tripId: string, busId: string): Promise<void> {
+export async function endTrip(tripId: string, _busId?: string): Promise<void> {
   try {
+    // Route documents remain static per spec; busId is ignored for backward compatibility
     const tripRef = doc(db, 'trips', tripId);
     await updateDoc(tripRef, {
       endedAt: Date.now(),
@@ -154,10 +153,6 @@ export async function endTrip(tripId: string, busId: string): Promise<void> {
       currentStopId: null,
       stopArrivedAt: null,
     });
-
-    // Clear active trip from bus
-    const busRef = doc(db, 'buses', busId);
-    await updateDoc(busRef, { activeTripId: null });
 
     console.log('Trip ended:', tripId);
   } catch (error) {
@@ -423,12 +418,12 @@ export function subscribeToAbsences(
 /**
  * Get all passengers for a bus
  */
-export async function getPassengersForBus(busId: string): Promise<UserProfile[]> {
+export async function getPassengersForBus(busNo: string): Promise<UserProfile[]> {
   try {
     const usersRef = collection(db, 'users');
     const q = query(
       usersRef,
-      where('busId', '==', busId),
+      where('busNo', '==', busNo),
       where('role', '==', 'student')
     );
     const snapshot = await getDocs(q);
@@ -443,14 +438,14 @@ export async function getPassengersForBus(busId: string): Promise<UserProfile[]>
  * Get passengers for a specific stop on a bus
  */
 export async function getPassengersForStop(
-  busId: string,
+  busNo: string,
   stopId: string
 ): Promise<UserProfile[]> {
   try {
     const usersRef = collection(db, 'users');
     const q = query(
       usersRef,
-      where('busId', '==', busId),
+      where('busNo', '==', busNo),
       where('preferredStopId', '==', stopId),
       where('role', '==', 'student')
     );
@@ -517,7 +512,7 @@ export function computeStopColor(
  * Compute full stop state for driver UI
  */
 export function computeStopState(
-  stop: BusStopDefinition,
+  stop: RouteStop,
   trip: Trip,
   passengers: UserProfile[],
   absences: Absence[],

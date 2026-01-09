@@ -13,7 +13,9 @@ const defaultAppState: AppState = {
   userRole: null,
   userId: null,
   userName: null,
-  busRouteId: null,
+  busNo: null,
+  routeId: null,
+  preferredStopId: null,
   onboardingComplete: false,
 };
 
@@ -24,7 +26,10 @@ export async function getAppState(): Promise<AppState> {
   try {
     const data = await AsyncStorage.getItem(STORAGE_KEYS.APP_STATE);
     if (data) {
-      return { ...defaultAppState, ...JSON.parse(data) };
+      const parsed = JSON.parse(data);
+      const routeId = parsed.routeId ?? parsed.busRouteId ?? defaultAppState.routeId;
+      const preferredStopId = parsed.preferredStopId ?? defaultAppState.preferredStopId;
+      return { ...defaultAppState, ...parsed, routeId, preferredStopId };
     }
     return defaultAppState;
   } catch (error) {

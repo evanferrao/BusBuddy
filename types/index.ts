@@ -35,29 +35,33 @@ export interface UserProfile {
   email: string;
   displayName: string;
   role: UserRole;
-  busId: string;                    // Bus assigned to user
+  busNo: string;                    // Bus assignment for the user
   preferredStopId?: string;         // Passengers only - their pickup stop
+  routeId?: string;                 // Optional route reference
   createdAt: number;
   updatedAt: number;
 }
 
-// Bus stop definition (static, stored in buses collection)
-export interface BusStopDefinition {
+// Bus stop definition (static, stored in routes collection)
+export interface RouteStop {
   stopId: string;
   name: string;
+  time: string;                     // e.g., "09:30"
+  scheduledTime?: string;           // Legacy alias for time
   lat: number;
   lng: number;
-  scheduledTime: string;            // e.g., "07:45"
 }
 
-// Bus document stored in Firestore buses/{busId}
-export interface Bus {
-  busId: string;
-  busNumber: string;                // e.g., "MH-01-1234"
-  driverId: string;                 // UID of assigned driver
-  activeTripId: string | null;      // Current trip ID if active
-  stops: BusStopDefinition[];       // Static route definition
+// Route document stored in Firestore routes/{routeId}
+export interface Route {
+  routeId: string;
+  busNo: string;
+  stops: RouteStop[];               // Static route definition
 }
+
+// Backward compatibility aliases
+export type BusStopDefinition = RouteStop;
+export type Bus = Route;
 
 // Trip status
 export type TripStatus = 'IN_TRANSIT' | 'AT_STOP';
@@ -65,7 +69,8 @@ export type TripStatus = 'IN_TRANSIT' | 'AT_STOP';
 // Trip document stored in Firestore trips/{tripId}
 export interface Trip {
   tripId: string;
-  busId: string;
+  busNo: string;
+  routeId?: string;
   driverId: string;
   startedAt: number;                // Timestamp
   endedAt?: number;                 // Timestamp when trip ended
@@ -142,6 +147,7 @@ export type StudentStatus = 'waiting' | 'boarding' | 'skipping' | 'onboard' | 'u
 export interface Student {
   id: string;
   name: string;
+  busNo?: string;
   stopName: string;
   stopId: string;
   stopLocation: Location;
@@ -157,7 +163,7 @@ export interface BusStop {
   name: string;
   location: Location;
   estimatedArrival?: number; // timestamp
-  students: string[]; // student IDs
+  students?: string[]; // student IDs (legacy, counts are derived from users)
   order: number; // order in route
   scheduledTime?: string;
 }
@@ -193,7 +199,8 @@ export interface AppState {
   userRole: UserRole;
   userId: string | null;
   userName: string | null;
-  busId: string | null;
+  busNo: string | null;
+  routeId: string | null;
   preferredStopId: string | null;
   onboardingComplete: boolean;
 }
