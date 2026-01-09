@@ -20,9 +20,11 @@ import { IconSymbol } from '@/components/ui/icon-symbol';
 import { BUS_COLORS, NOTIFICATION_CONFIG, STOP_COLOR_CONFIG, STOP_TIMING, STUDENT_STATUS_CONFIG } from '@/constants/bus-tracker';
 import { useApp } from '@/context/app-context';
 import { useColorScheme } from '@/hooks/use-color-scheme';
+import * as BusService from '@/services/bus-service';
 import { formatHeading, formatSpeed } from '@/services/location';
 import { getBusStops } from '@/services/mock-data';
-import { StopColor, Student, StudentNotification } from '@/types';
+import * as TripService from '@/services/trip-service';
+import { Absence, Bus, StopColor, StopState, Student, StudentNotification, UserProfile, WaitRequest } from '@/types';
 import React, { useEffect, useState } from 'react';
 import {
     Alert,
@@ -41,67 +43,124 @@ export default function DriverDashboard() {
     currentLocation,
     startTracking,
     stopTracking,
+    arriveAtStop,
+    departFromStop,
     notifications,
     unreadCount,
     students,
     markNotificationRead,
     clearAllNotifications,
+    activeTrip,
+    busId,
   } = useApp();
   
   const colorScheme = useColorScheme();
   const isDark = colorScheme === 'dark';
   const [refreshing, setRefreshing] = useState(false);
   
-  // Mock current stop state for demo
-  const [currentStopIndex, setCurrentStopIndex] = useState(0);
-  const [stopArrivedAt, setStopArrivedAt] = useState<number | null>(null);
-  const [elapsedSeconds, setElapsedSeconds] = useState(0);
+  // Real bus and trip state
+  const [bus, setBus] = useState<Bus | null>(null);
+  const [passengers, setPassengers] = useState<UserProfile[]>([]);
+  const [waitRequests, setWaitRequests] = useState<WaitRequest[]>([]);
+  const [absences, setAbsences] = useState<Absence[]>([]);
+  const [currentStopState, setCurrentStopState] = useState<StopState | null>(null);
   
-  const busStops = getBusStops();
-  const currentStop = busStops[currentStopIndex];
+  // Get current stop
+  const currentStop = bus?.stops.find(s => s.stopId === activeTrip?.currentStopId);
+  const currentStopIndex = bus?.stops.findIndex(s => s.stopId === activeTrip?.currentStopId) ?? -1;
 
   const backgroundColor = isDark ? BUS_COLORS.background.dark : BUS_COLORS.background.light;
   const cardColor = isDark ? BUS_COLORS.card.dark : BUS_COLORS.card.light;
   const textColor = isDark ? BUS_COLORS.text.dark : BUS_COLORS.text.light;
   const secondaryTextColor = isDark ? BUS_COLORS.textSecondary.dark : BUS_COLORS.textSecondary.light;
 
-  // Timer for tracking elapsed time at stop
+  // Load bus data
   useEffect(() => {
-    if (isTracking && stopArrivedAt) {
-      const interval = setInterval(() => {
-        setElapsedSeconds(Math.floor((Date.now() - stopArrivedAt) / 1000));
-      }, 1000);
-      return () => clearInterval(interval);
-    }
-  }, [isTracking, stopArrivedAt]);
+    if (!busId) return;
 
-  // Compute current stop color (per specification)
-  const computeStopColor = (): StopColor => {
-    if (!isTracking || stopArrivedAt === null) return 'GREEN';
-    
-    // Check if all passengers at this stop are absent
-    const stopNotifications = notifications.filter(n => 
-      n.stopName === currentStop?.name && n.type === 'skip'
+    const loadBus = async () => {
+      try {
+        const busData = await BusService.getBus(busId);
+        setBus(busData);
+      } catch (error) {
+        console.error('Error loading bus:', error);
+      }
+    };
+
+    loadBus();
+  }, [busId]);
+
+  // Subscribe to trip data
+  useEffect(() => {
+    if (!activeTrip?.tripId || !bus) return;
+
+    // Load passengers
+    const loadPassengers = async () => {
+      try {
+        const passengerList = await TripService.getPassengersForBus(bus.busId);
+        setPassengers(passengerList);
+      } catch (error) {
+        console.error('Error loading passengers:', error);
+      }
+    };
+
+    loadPassengers();
+
+    // Subscribe to wait requests
+    const unsubWait = TripService.subscribeToWaitRequests(activeTrip.tripId, (requests) => {
+      setWaitRequests(requests);
+    });
+
+    // Subscribe to absences
+    const unsubAbsence = TripService.subscribeToAbsences(activeTrip.tripId, (absenceList) => {
+      setAbsences(absenceList);
+    });
+
+    return () => {
+      unsubWait();
+      unsubAbsence();
+    };
+  }, [activeTrip?.tripId, bus]);
+
+  // Compute current stop state
+  useEffect(() => {
+    if (!activeTrip || !bus || !currentStop) {
+      setCurrentStopState(null);
+      return;
+    }
+
+    const stopState = TripService.computeStopState(
+      currentStop,
+      activeTrip,
+      passengers,
+      absences,
+      waitRequests
     );
-    const stopStudents = students.filter(s => s.stopName === currentStop?.name);
-    const allAbsent = stopStudents.length > 0 && stopNotifications.length >= stopStudents.length;
-    
-    if (allAbsent) return 'GREY';
-    
-    // Check time-based colors
-    if (elapsedSeconds <= STOP_TIMING.RED_DURATION) return 'RED';
-    
-    // Check for wait requests
-    const waitRequests = notifications.filter(n => 
-      n.stopName === currentStop?.name && n.type === 'wait'
-    );
-    if (waitRequests.length > 0 && elapsedSeconds <= STOP_TIMING.YELLOW_DURATION) return 'YELLOW';
-    
-    return 'GREEN';
-  };
-  
-  const currentStopColor = computeStopColor();
-  const stopColorConfig = STOP_COLOR_CONFIG[currentStopColor];
+    setCurrentStopState(stopState);
+  }, [activeTrip, bus, currentStop, passengers, absences, waitRequests]);
+
+  // Timer for updating elapsed time
+  useEffect(() => {
+    if (!currentStopState || currentStopState.color === 'GREEN' || currentStopState.color === 'GREY') {
+      return;
+    }
+
+    const interval = setInterval(() => {
+      // Force re-computation by triggering the effect above
+      if (activeTrip && bus && currentStop) {
+        const stopState = TripService.computeStopState(
+          currentStop,
+          activeTrip,
+          passengers,
+          absences,
+          waitRequests
+        );
+        setCurrentStopState(stopState);
+      }
+    }, 1000);
+
+    return () => clearInterval(interval);
+  }, [currentStopState, activeTrip, bus, currentStop, passengers, absences, waitRequests]);
 
   const handleToggleTracking = async () => {
     if (isTracking) {
@@ -115,18 +174,13 @@ export default function DriverDashboard() {
             style: 'destructive', 
             onPress: () => {
               stopTracking();
-              setStopArrivedAt(null);
-              setElapsedSeconds(0);
             }
           },
         ]
       );
     } else {
       const success = await startTracking();
-      if (success) {
-        // Simulate arriving at first stop
-        setStopArrivedAt(Date.now());
-      } else {
+      if (!success) {
         Alert.alert(
           'Location Permission Required',
           'Please enable location access to share your location with students.',
@@ -136,21 +190,45 @@ export default function DriverDashboard() {
     }
   };
   
-  const handleArriveAtStop = () => {
-    setStopArrivedAt(Date.now());
-    setElapsedSeconds(0);
+  const handleArriveAtStop = async () => {
+    if (!bus || !activeTrip) return;
+    
+    // Find next stop
+    const nextStopIndex = currentStopIndex >= 0 ? currentStopIndex + 1 : 0;
+    if (nextStopIndex >= bus.stops.length) {
+      Alert.alert('Route Complete', 'You have reached the end of the route.');
+      return;
+    }
+    
+    const nextStop = bus.stops[nextStopIndex];
+    try {
+      await arriveAtStop(nextStop.stopId);
+      Alert.alert('Arrived', `Arrived at ${nextStop.name}`);
+    } catch (error) {
+      Alert.alert('Error', 'Failed to mark arrival at stop');
+    }
   };
   
-  const handleDepartFromStop = () => {
-    if (currentStopIndex < busStops.length - 1) {
-      setCurrentStopIndex(currentStopIndex + 1);
-      setStopArrivedAt(null);
-      setElapsedSeconds(0);
+  const handleDepartFromStop = async () => {
+    try {
+      await departFromStop();
+      Alert.alert('Departed', 'Departed from stop');
+    } catch (error) {
+      Alert.alert('Error', 'Failed to depart from stop');
     }
   };
 
   const onRefresh = async () => {
     setRefreshing(true);
+    // Reload bus data
+    if (busId) {
+      try {
+        const busData = await BusService.getBus(busId);
+        setBus(busData);
+      } catch (error) {
+        console.error('Error refreshing bus data:', error);
+      }
+    }
     await new Promise(resolve => setTimeout(resolve, 1000));
     setRefreshing(false);
   };
@@ -167,11 +245,12 @@ export default function DriverDashboard() {
   };
   
   const getRemainingTime = (): number | null => {
-    if (currentStopColor === 'GREY' || currentStopColor === 'GREEN') return null;
-    if (currentStopColor === 'RED') return Math.max(0, STOP_TIMING.RED_DURATION - elapsedSeconds);
-    if (currentStopColor === 'YELLOW') return Math.max(0, STOP_TIMING.YELLOW_DURATION - elapsedSeconds);
-    return null;
+    if (!currentStopState) return null;
+    return TripService.getRemainingTime(currentStopState);
   };
+
+  const currentStopColor = currentStopState?.color || 'GREEN';
+  const stopColorConfig = STOP_COLOR_CONFIG[currentStopColor];
 
   return (
     <ScrollView
@@ -277,22 +356,22 @@ export default function DriverDashboard() {
           )}
           
           {/* Wait Request Count */}
-          {currentStopColor === 'YELLOW' && (
+          {currentStopColor === 'YELLOW' && currentStopState && (
             <View style={styles.waitRequestInfo}>
               <Text style={styles.waitRequestText}>
-                {notifications.filter(n => n.stopName === currentStop.name && n.type === 'wait').length} wait request(s)
+                {currentStopState.waitRequestCount} wait request(s)
               </Text>
             </View>
           )}
           
           {/* Action Buttons */}
           <View style={styles.stopActions}>
-            {!stopArrivedAt ? (
+            {activeTrip?.status === 'IN_TRANSIT' ? (
               <TouchableOpacity
                 style={styles.stopActionButton}
                 onPress={handleArriveAtStop}
               >
-                <Text style={styles.stopActionText}>Arrive at Stop</Text>
+                <Text style={styles.stopActionText}>Arrive at Next Stop</Text>
               </TouchableOpacity>
             ) : (
               <TouchableOpacity
