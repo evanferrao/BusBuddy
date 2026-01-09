@@ -170,7 +170,18 @@ export const DEFAULT_ROUTE: Route = {
 };
 
 /**
- * Initialize default route in Firestore if it doesn't exist
+ * Initialize default route in Firestore if it doesn't exist.
+ * 
+ * This utility function can be called during app initialization or
+ * from a setup script to seed the database with default route data.
+ * 
+ * Usage:
+ * - Call once during initial app setup or from admin dashboard
+ * - Safe to call multiple times (checks for existing data first)
+ * 
+ * @example
+ * // In app initialization or setup script
+ * await initializeDefaultRoute();
  */
 export async function initializeDefaultRoute(): Promise<void> {
   try {

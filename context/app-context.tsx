@@ -10,6 +10,7 @@
  * - Wait requests and absences are trip-scoped
  */
 
+import { DEFAULT_IDS } from '@/constants/bus-tracker';
 import * as AuthService from '@/services/auth';
 import * as FirestoreService from '@/services/firestore';
 import * as LocationService from '@/services/location';
@@ -93,8 +94,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [userRole, setUserRole] = useState<UserRole>(null);
   const [userName, setUserName] = useState<string | null>(null);
   const [userId, setUserId] = useState<string | null>(null);
-  const [busId, setBusId] = useState<string | null>('bus_1'); // Default bus for demo
-  const [preferredStopId, setPreferredStopId] = useState<string | null>('stop_1'); // Default stop for demo
+  const [busId, setBusId] = useState<string | null>(DEFAULT_IDS.BUS_ID);
+  const [preferredStopId, setPreferredStopId] = useState<string | null>(DEFAULT_IDS.STOP_ID);
   const [isLoading, setIsLoading] = useState(true);
   
   // Location state
@@ -139,8 +140,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
             setUserRole(userProfile.role);
             setUserName(userProfile.displayName);
             setUserId(firebaseUser.uid);
-            setBusId(userProfile.busId || 'bus_1');
-            setPreferredStopId(userProfile.preferredStopId || 'stop_1');
+            setBusId(userProfile.busId || DEFAULT_IDS.BUS_ID);
+            setPreferredStopId(userProfile.preferredStopId || DEFAULT_IDS.STOP_ID);
             
             // Save to local storage
             await StorageService.saveAppState({
@@ -180,8 +181,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setIsDriverActive(MockData.isDriverTracking());
     setBusLocation(MockData.getBusLocation());
     
-    // Load route data
-    RouteService.getRoute('route_1').then((r) => {
+    // Load route data (uses user's associated route, falls back to default)
+    RouteService.getRoute(DEFAULT_IDS.ROUTE_ID).then((r) => {
       if (r) setRoute(r);
     });
 

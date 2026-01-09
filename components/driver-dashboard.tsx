@@ -69,7 +69,7 @@ export default function DriverDashboard() {
       return route.stops.map(stop => ({
         id: stop.stopId,
         name: stop.name,
-        location: { latitude: stop.lat, longitude: stop.lng, timestamp: Date.now() },
+        location: { latitude: stop.lat, longitude: stop.lng, timestamp: 0 },
         students: [],
         order: 0,
         scheduledTime: stop.scheduledTime,

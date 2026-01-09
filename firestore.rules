@@ -37,13 +37,15 @@ service cloud.firestore {
     }
 
     // ============================================
+    // ============================================
     // ROUTES: routes/{routeId}
     // Static route data - read by all authenticated users
+    // Write restricted to drivers (admin functionality not yet implemented)
     // ============================================
     match /routes/{routeId} {
       allow read: if isAuthenticated();
-      // Only admins should write routes (not implemented yet)
-      allow write: if isAuthenticated();
+      // Only drivers can modify route data (in production, this should be admin-only)
+      allow write: if isDriver();
     }
 
     // ============================================

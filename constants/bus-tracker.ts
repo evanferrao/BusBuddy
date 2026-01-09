@@ -3,6 +3,13 @@
 export const APP_NAME = 'Bus Buddy';
 export const APP_TAGLINE = 'Never miss your school bus again!';
 
+// Default IDs for demo/development (per specification)
+export const DEFAULT_IDS = {
+  BUS_ID: 'bus_1',               // Default bus for demo
+  ROUTE_ID: 'route_1',           // Default route for demo
+  STOP_ID: 'stop_1',             // Default stop for demo (Ganesh Nagar)
+} as const;
+
 // Storage keys for AsyncStorage
 export const STORAGE_KEYS = {
   APP_STATE: '@bus_buddy_app_state',
