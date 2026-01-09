@@ -2,17 +2,108 @@ rules_version='2'
 
 service cloud.firestore {
   match /databases/{database}/documents {
+    // Helper functions
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    function isOwner(userId) {
+      return request.auth != null && request.auth.uid == userId;
+    }
+    
+    function getUserRole() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role;
+    }
+    
+    function isDriver() {
+      return isAuthenticated() && getUserRole() == 'driver';
+    }
+    
+    function isStudent() {
+      return isAuthenticated() && getUserRole() == 'student';
+    }
+
+    // ============================================
+    // USER PROFILES: users/{uid}
+    // ============================================
+    match /users/{userId} {
+      // Users can read their own profile
+      // Drivers can read all users (to see passengers on their route)
+      allow read: if isOwner(userId) || isDriver();
+      
+      // Users can only write to their own profile
+      allow create, update: if isOwner(userId);
+      allow delete: if isOwner(userId);
+    }
+
+    // ============================================
+    // ROUTES: routes/{routeId}
+    // Static route data - read by all authenticated users
+    // ============================================
+    match /routes/{routeId} {
+      allow read: if isAuthenticated();
+      // Only admins should write routes (not implemented yet)
+      allow write: if isAuthenticated();
+    }
+
+    // ============================================
+    // BUSES: buses/{busId}
+    // Bus configuration - read by all, write by drivers
+    // ============================================
+    match /buses/{busId} {
+      allow read: if isAuthenticated();
+      allow write: if isDriver();
+    }
+
+    // ============================================
+    // TRIPS: trips/{tripId}
+    // Live trip data - drivers manage trips
+    // ============================================
+    match /trips/{tripId} {
+      // All authenticated users can read trip data
+      allow read: if isAuthenticated();
+      
+      // Only drivers can create/update/delete trips
+      allow create, update, delete: if isDriver();
+      
+      // ============================================
+      // WAIT REQUESTS: trips/{tripId}/waitRequests/{uid}
+      // Passengers can request wait at their stop
+      // ============================================
+      match /waitRequests/{uid} {
+        // Drivers can read all wait requests
+        // Passengers can read their own wait request
+        allow read: if isDriver() || isOwner(uid);
+        
+        // Only passengers can create their own wait request
+        allow create, update: if isOwner(uid) && isStudent();
+        
+        // Only the owner or driver can delete
+        allow delete: if isOwner(uid) || isDriver();
+      }
+      
+      // ============================================
+      // ABSENCES: trips/{tripId}/absences/{uid}
+      // Passengers can mark themselves absent
+      // ============================================
+      match /absences/{uid} {
+        // Drivers can read all absences
+        // Passengers can read their own absence record
+        allow read: if isDriver() || isOwner(uid);
+        
+        // Only passengers can mark their own absence
+        allow create: if isOwner(uid) && isStudent();
+        
+        // Absences cannot be updated or deleted (per spec: absence is final)
+        allow update, delete: if false;
+      }
+    }
+
+    // ============================================
+    // FALLBACK: Deny all other access
+    // ============================================
     match /{document=**} {
-      // This rule allows anyone with your database reference to view, edit,
-      // and delete all data in your database. It is useful for getting
-      // started, but it is configured to expire after 30 days because it
-      // leaves your app open to attackers. At that time, all client
-      // requests to your database will be denied.
-      //
-      // Make sure to write security rules for your app before that time, or
-      // else all client requests to your database will be denied until you
-      // update your rules.
-      allow read, write: if request.time < timestamp.date(2026, 2, 7);
+      allow read, write: if false;
     }
   }
 }

@@ -23,7 +23,7 @@ import { useColorScheme } from '@/hooks/use-color-scheme';
 import { formatHeading, formatSpeed } from '@/services/location';
 import { getBusStops } from '@/services/mock-data';
 import { StopColor, Student, StudentNotification } from '@/types';
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
     Alert,
     RefreshControl,
@@ -46,19 +46,43 @@ export default function DriverDashboard() {
     students,
     markNotificationRead,
     clearAllNotifications,
+    activeTrip,
+    route,
+    waitRequests,
+    absences,
+    startTrip,
+    endTrip,
+    arriveAtStop,
+    departFromStop,
   } = useApp();
   
   const colorScheme = useColorScheme();
   const isDark = colorScheme === 'dark';
   const [refreshing, setRefreshing] = useState(false);
   
-  // Mock current stop state for demo
+  // Track current stop index for navigation
   const [currentStopIndex, setCurrentStopIndex] = useState(0);
-  const [stopArrivedAt, setStopArrivedAt] = useState<number | null>(null);
-  const [elapsedSeconds, setElapsedSeconds] = useState(0);
   
-  const busStops = getBusStops();
+  // Get bus stops from route (per specification: routes/{routeId}.stops)
+  const busStops = useMemo(() => {
+    if (route && route.stops.length > 0) {
+      return route.stops.map(stop => ({
+        id: stop.stopId,
+        name: stop.name,
+        location: { latitude: stop.lat, longitude: stop.lng, timestamp: Date.now() },
+        students: [],
+        order: 0,
+        scheduledTime: stop.scheduledTime,
+      }));
+    }
+    return getBusStops();
+  }, [route]);
+  
   const currentStop = busStops[currentStopIndex];
+  
+  // Use trip data for stop arrival time (per specification: trips/{tripId}.stopArrivedAt)
+  const stopArrivedAt = activeTrip?.stopArrivedAt ?? null;
+  const [elapsedSeconds, setElapsedSeconds] = useState(0);
 
   const backgroundColor = isDark ? BUS_COLORS.background.dark : BUS_COLORS.background.light;
   const cardColor = isDark ? BUS_COLORS.card.dark : BUS_COLORS.card.light;
@@ -72,36 +96,50 @@ export default function DriverDashboard() {
         setElapsedSeconds(Math.floor((Date.now() - stopArrivedAt) / 1000));
       }, 1000);
       return () => clearInterval(interval);
+    } else {
+      setElapsedSeconds(0);
     }
   }, [isTracking, stopArrivedAt]);
 
   // Compute current stop color (per specification)
+  // Colors are NEVER stored in the database - computed client-side
   const computeStopColor = (): StopColor => {
     if (!isTracking || stopArrivedAt === null) return 'GREEN';
     
-    // Check if all passengers at this stop are absent
-    const stopNotifications = notifications.filter(n => 
-      n.stopName === currentStop?.name && n.type === 'skip'
-    );
-    const stopStudents = students.filter(s => s.stopName === currentStop?.name);
-    const allAbsent = stopStudents.length > 0 && stopNotifications.length >= stopStudents.length;
+    // Get current stop ID
+    const currentStopId = currentStop?.id;
     
+    // Count passengers at this stop (per spec: COUNT(users where preferredStopId == stopId))
+    const stopStudents = students.filter(s => s.stopId === currentStopId);
+    const totalPassengers = stopStudents.length;
+    
+    // Count absences at this stop from real Firestore data
+    // Per spec: trips/{tripId}/absences where stopId == stopId
+    const stopAbsences = absences.filter(a => a.stopId === currentStopId);
+    const absentCount = stopAbsences.length;
+    
+    // Check if all passengers are absent (per spec: GREY state)
+    const allAbsent = totalPassengers > 0 && absentCount >= totalPassengers;
     if (allAbsent) return 'GREY';
     
-    // Check time-based colors
+    // Check time-based colors (per spec: RED 0-5 min, YELLOW 5-7 min with wait requests)
     if (elapsedSeconds <= STOP_TIMING.RED_DURATION) return 'RED';
     
-    // Check for wait requests
-    const waitRequests = notifications.filter(n => 
-      n.stopName === currentStop?.name && n.type === 'wait'
-    );
-    if (waitRequests.length > 0 && elapsedSeconds <= STOP_TIMING.YELLOW_DURATION) return 'YELLOW';
+    // Count wait requests from real Firestore data
+    // Per spec: trips/{tripId}/waitRequests where stopId == stopId
+    const stopWaitRequests = waitRequests.filter(w => w.stopId === currentStopId);
+    if (stopWaitRequests.length > 0 && elapsedSeconds <= STOP_TIMING.YELLOW_DURATION) return 'YELLOW';
     
     return 'GREEN';
   };
   
   const currentStopColor = computeStopColor();
   const stopColorConfig = STOP_COLOR_CONFIG[currentStopColor];
+  
+  // Get counts for display (per spec: derived from real-time data)
+  const currentStopId = currentStop?.id;
+  const currentStopWaitRequests = waitRequests.filter(w => w.stopId === currentStopId);
+  const currentStopAbsences = absences.filter(a => a.stopId === currentStopId);
 
   const handleToggleTracking = async () => {
     if (isTracking) {
@@ -113,10 +151,17 @@ export default function DriverDashboard() {
           { 
             text: 'End Trip', 
             style: 'destructive', 
-            onPress: () => {
-              stopTracking();
-              setStopArrivedAt(null);
-              setElapsedSeconds(0);
+            onPress: async () => {
+              try {
+                // End trip in Firestore (per spec: trips/{tripId})
+                await endTrip();
+                stopTracking();
+                setElapsedSeconds(0);
+                setCurrentStopIndex(0);
+              } catch (error) {
+                console.error('Error ending trip:', error);
+                Alert.alert('Error', 'Failed to end trip. Please try again.');
+              }
             }
           },
         ]
@@ -124,8 +169,12 @@ export default function DriverDashboard() {
     } else {
       const success = await startTracking();
       if (success) {
-        // Simulate arriving at first stop
-        setStopArrivedAt(Date.now());
+        try {
+          // Start trip in Firestore (per spec: trips/{tripId})
+          await startTrip();
+        } catch (error) {
+          console.error('Error starting trip:', error);
+        }
       } else {
         Alert.alert(
           'Location Permission Required',
@@ -136,16 +185,32 @@ export default function DriverDashboard() {
     }
   };
   
-  const handleArriveAtStop = () => {
-    setStopArrivedAt(Date.now());
-    setElapsedSeconds(0);
+  const handleArriveAtStop = async () => {
+    if (!currentStop?.id) return;
+    
+    try {
+      // Arrive at stop in Firestore (per spec: trips/{tripId}.currentStopId, stopArrivedAt, status)
+      await arriveAtStop(currentStop.id);
+      setElapsedSeconds(0);
+    } catch (error) {
+      console.error('Error arriving at stop:', error);
+      Alert.alert('Error', 'Failed to mark arrival. Please try again.');
+    }
   };
   
-  const handleDepartFromStop = () => {
-    if (currentStopIndex < busStops.length - 1) {
-      setCurrentStopIndex(currentStopIndex + 1);
-      setStopArrivedAt(null);
+  const handleDepartFromStop = async () => {
+    try {
+      // Depart from stop in Firestore (per spec: trips/{tripId}.status = IN_TRANSIT)
+      await departFromStop();
+      
+      // Move to next stop
+      if (currentStopIndex < busStops.length - 1) {
+        setCurrentStopIndex(currentStopIndex + 1);
+      }
       setElapsedSeconds(0);
+    } catch (error) {
+      console.error('Error departing from stop:', error);
+      Alert.alert('Error', 'Failed to depart. Please try again.');
     }
   };
 
@@ -280,7 +345,7 @@ export default function DriverDashboard() {
           {currentStopColor === 'YELLOW' && (
             <View style={styles.waitRequestInfo}>
               <Text style={styles.waitRequestText}>
-                {notifications.filter(n => n.stopName === currentStop.name && n.type === 'wait').length} wait request(s)
+                {currentStopWaitRequests.length} wait request(s)
               </Text>
             </View>
           )}

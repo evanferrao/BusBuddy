@@ -15,7 +15,9 @@ import * as FirestoreService from '@/services/firestore';
 import * as LocationService from '@/services/location';
 import * as MockData from '@/services/mock-data';
 import * as StorageService from '@/services/storage';
-import { AuthUserData, Location, NotificationType, StopState, Student, StudentNotification, Trip, UserRole } from '@/types';
+import * as TripService from '@/services/trip-service';
+import * as RouteService from '@/services/route-service';
+import { Absence, AuthUserData, Location, NotificationType, Route, StopState, Student, StudentNotification, Trip, UserRole, WaitRequest } from '@/types';
 import React, { createContext, ReactNode, useCallback, useContext, useEffect, useState } from 'react';
 
 interface AppContextType {
@@ -35,9 +37,12 @@ interface AppContextType {
   isTracking: boolean;
   currentLocation: Location | null;
   
-  // Trip state
+  // Trip state (real-time from Firestore)
   activeTrip: Trip | null;
   currentStopState: StopState | null;
+  route: Route | null;
+  waitRequests: WaitRequest[];
+  absences: Absence[];
   
   // Bus location (student view)
   busLocation: Location | null;
@@ -64,10 +69,17 @@ interface AppContextType {
   startTracking: () => Promise<boolean>;
   stopTracking: () => void;
   sendNotification: (type: NotificationType, message?: string) => void;
+  sendWaitRequest: () => Promise<void>;
+  markAbsent: () => Promise<void>;
   markNotificationRead: (id: string) => void;
   clearAllNotifications: () => void;
   refreshBusLocation: () => void;
   logout: () => Promise<void>;
+  // Trip management for drivers
+  startTrip: () => Promise<Trip | null>;
+  endTrip: () => Promise<void>;
+  arriveAtStop: (stopId: string) => Promise<void>;
+  departFromStop: () => Promise<void>;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -91,9 +103,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [busLocation, setBusLocation] = useState<Location | null>(null);
   const [isDriverActive, setIsDriverActive] = useState(false);
   
-  // Trip state
+  // Trip state (real-time from Firestore)
   const [activeTrip, setActiveTrip] = useState<Trip | null>(null);
   const [currentStopState, setCurrentStopState] = useState<StopState | null>(null);
+  const [route, setRoute] = useState<Route | null>(null);
+  const [waitRequests, setWaitRequests] = useState<WaitRequest[]>([]);
+  const [absences, setAbsences] = useState<Absence[]>([]);
   
   // Passenger action state (per spec: trip-scoped)
   const [hasMarkedAbsence, setHasMarkedAbsence] = useState(false);
@@ -124,6 +139,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
             setUserRole(userProfile.role);
             setUserName(userProfile.displayName);
             setUserId(firebaseUser.uid);
+            setBusId(userProfile.busId || 'bus_1');
+            setPreferredStopId(userProfile.preferredStopId || 'stop_1');
             
             // Save to local storage
             await StorageService.saveAppState({
@@ -162,9 +179,61 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setStudents(MockData.getStudents());
     setIsDriverActive(MockData.isDriverTracking());
     setBusLocation(MockData.getBusLocation());
+    
+    // Load route data
+    RouteService.getRoute('route_1').then((r) => {
+      if (r) setRoute(r);
+    });
 
     return unsubscribe;
   }, []);
+
+  // Subscribe to active trip and related data
+  useEffect(() => {
+    if (!busId || !isAuthenticated) return;
+
+    const tripId = TripService.generateTripId(busId);
+    
+    // Subscribe to trip updates
+    const unsubscribeTrip = TripService.subscribeToTrip(tripId, (trip) => {
+      setActiveTrip(trip);
+      if (trip) {
+        setIsDriverActive(true);
+        // Update bus location from trip
+        setBusLocation({
+          latitude: trip.location.lat,
+          longitude: trip.location.lng,
+          timestamp: Date.now(),
+        });
+      } else {
+        setIsDriverActive(false);
+      }
+    });
+
+    // Subscribe to wait requests
+    const unsubscribeWaitRequests = TripService.subscribeToWaitRequests(tripId, (requests) => {
+      setWaitRequests(requests);
+      // Check if current user has sent a wait request
+      if (userId) {
+        setHasSentWaitRequest(requests.some(r => r.passengerId === userId));
+      }
+    });
+
+    // Subscribe to absences
+    const unsubscribeAbsences = TripService.subscribeToAbsences(tripId, (abs) => {
+      setAbsences(abs);
+      // Check if current user has marked absence
+      if (userId) {
+        setHasMarkedAbsence(abs.some(a => a.passengerId === userId));
+      }
+    });
+
+    return () => {
+      unsubscribeTrip();
+      unsubscribeWaitRequests();
+      unsubscribeAbsences();
+    };
+  }, [busId, isAuthenticated, userId]);
 
   // Poll for bus location updates (for students)
   useEffect(() => {
@@ -350,6 +419,124 @@ export function AppProvider({ children }: { children: ReactNode }) {
     await signOut();
   };
 
+  // ============================================
+  // TRIP MANAGEMENT FUNCTIONS (Per Specification)
+  // ============================================
+
+  /**
+   * Start a new trip (Driver only)
+   * Per spec: Creates trip document in trips/{tripId}
+   */
+  const startTripAction = useCallback(async (): Promise<Trip | null> => {
+    if (!userId || !busId || userRole !== 'driver') return null;
+    
+    const initialLocation = currentLocation || { latitude: 0, longitude: 0 };
+    
+    try {
+      const trip = await TripService.startTrip(busId, userId, {
+        lat: initialLocation.latitude,
+        lng: initialLocation.longitude,
+      });
+      setActiveTrip(trip);
+      return trip;
+    } catch (error) {
+      console.error('Error starting trip:', error);
+      return null;
+    }
+  }, [userId, busId, userRole, currentLocation]);
+
+  /**
+   * End the current trip (Driver only)
+   */
+  const endTripAction = useCallback(async (): Promise<void> => {
+    if (!activeTrip || !busId) return;
+    
+    try {
+      await TripService.endTrip(activeTrip.tripId, busId);
+      setActiveTrip(null);
+      setWaitRequests([]);
+      setAbsences([]);
+    } catch (error) {
+      console.error('Error ending trip:', error);
+    }
+  }, [activeTrip, busId]);
+
+  /**
+   * Arrive at a stop (Driver only)
+   * Per spec: Sets currentStopId, stopArrivedAt, and status to AT_STOP
+   */
+  const arriveAtStopAction = useCallback(async (stopId: string): Promise<void> => {
+    if (!activeTrip) return;
+    
+    try {
+      await TripService.arriveAtStop(activeTrip.tripId, stopId);
+    } catch (error) {
+      console.error('Error arriving at stop:', error);
+    }
+  }, [activeTrip]);
+
+  /**
+   * Depart from current stop (Driver only)
+   * Per spec: Sets status to IN_TRANSIT
+   */
+  const departFromStopAction = useCallback(async (): Promise<void> => {
+    if (!activeTrip) return;
+    
+    try {
+      await TripService.departFromStop(activeTrip.tripId);
+    } catch (error) {
+      console.error('Error departing from stop:', error);
+    }
+  }, [activeTrip]);
+
+  // ============================================
+  // PASSENGER ACTION FUNCTIONS (Per Specification)
+  // ============================================
+
+  /**
+   * Send wait request (Passenger only)
+   * Per spec: Creates document in trips/{tripId}/waitRequests/{uid}
+   */
+  const sendWaitRequestAction = useCallback(async (): Promise<void> => {
+    if (!userId || !preferredStopId || !busId || hasMarkedAbsence) return;
+    
+    const tripId = TripService.generateTripId(busId);
+    
+    try {
+      await TripService.sendWaitRequest(tripId, userId, preferredStopId);
+      setHasSentWaitRequest(true);
+      
+      // Also send mock notification for backward compatibility
+      MockData.sendStudentNotification('student-1', 'wait');
+      setNotifications(MockData.getNotifications());
+    } catch (error) {
+      console.error('Error sending wait request:', error);
+    }
+  }, [userId, preferredStopId, busId, hasMarkedAbsence]);
+
+  /**
+   * Mark absence (Passenger only)
+   * Per spec: Creates document in trips/{tripId}/absences/{uid}
+   * Note: Absence is final for the trip and disables wait requests
+   */
+  const markAbsentAction = useCallback(async (): Promise<void> => {
+    if (!userId || !preferredStopId || !busId || hasMarkedAbsence) return;
+    
+    const tripId = TripService.generateTripId(busId);
+    
+    try {
+      await TripService.markAbsence(tripId, userId, preferredStopId);
+      setHasMarkedAbsence(true);
+      setHasSentWaitRequest(false); // Per spec: Absence disables wait requests
+      
+      // Also send mock notification for backward compatibility
+      MockData.sendStudentNotification('student-1', 'skip');
+      setNotifications(MockData.getNotifications());
+    } catch (error) {
+      console.error('Error marking absence:', error);
+    }
+  }, [userId, preferredStopId, busId, hasMarkedAbsence]);
+
   const unreadCount = notifications.filter(n => !n.isRead).length;
 
   return (
@@ -367,6 +554,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
         currentLocation,
         activeTrip,
         currentStopState,
+        route,
+        waitRequests,
+        absences,
         busLocation,
         isDriverActive,
         hasMarkedAbsence,
@@ -381,10 +571,16 @@ export function AppProvider({ children }: { children: ReactNode }) {
         startTracking,
         stopTracking,
         sendNotification,
+        sendWaitRequest: sendWaitRequestAction,
+        markAbsent: markAbsentAction,
         markNotificationRead,
         clearAllNotifications,
         refreshBusLocation,
         logout,
+        startTrip: startTripAction,
+        endTrip: endTripAction,
+        arriveAtStop: arriveAtStopAction,
+        departFromStop: departFromStopAction,
       }}
     >
       {children}
