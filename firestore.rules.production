@@ -1,0 +1,96 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Helper functions
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+    
+    function getUserData() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+    
+    function isDriver() {
+      return isAuthenticated() && getUserData().role == 'driver';
+    }
+    
+    function isStudent() {
+      return isAuthenticated() && getUserData().role == 'student';
+    }
+    
+    function isDriverForBus(busId) {
+      return isDriver() && getUserData().busId == busId;
+    }
+    
+    // Users collection
+    match /users/{userId} {
+      // Anyone can read (for driver to see passenger info)
+      allow read: if isAuthenticated();
+      
+      // Users can create their own profile during registration
+      allow create: if isOwner(userId);
+      
+      // Users can only update their own profile
+      allow update: if isOwner(userId);
+      
+      // Only owners can delete their profile
+      allow delete: if isOwner(userId);
+    }
+    
+    // Buses collection (static route data)
+    match /buses/{busId} {
+      // Anyone authenticated can read bus data
+      allow read: if isAuthenticated();
+      
+      // Only admins should create/update/delete buses
+      // For now, allow drivers to update activeTripId
+      allow update: if isDriver();
+      
+      // Creating/deleting should be admin-only (commented out for now)
+      // allow create, delete: if isAdmin();
+    }
+    
+    // Trips collection
+    match /trips/{tripId} {
+      // Anyone authenticated can read trip data
+      allow read: if isAuthenticated();
+      
+      // Only drivers can create/update trips
+      allow create: if isDriver();
+      allow update: if isDriver();
+      
+      // Drivers can delete their own trips
+      allow delete: if isDriver();
+      
+      // Wait requests subcollection
+      match /waitRequests/{passengerId} {
+        // Anyone can read (driver needs to see them)
+        allow read: if isAuthenticated();
+        
+        // Only the passenger can create/update their wait request
+        allow create, update: if isOwner(passengerId) && isStudent();
+        
+        // Only the passenger can delete their wait request
+        allow delete: if isOwner(passengerId);
+      }
+      
+      // Absences subcollection
+      match /absences/{passengerId} {
+        // Anyone can read (driver needs to see them)
+        allow read: if isAuthenticated();
+        
+        // Only the passenger can create their absence
+        allow create: if isOwner(passengerId) && isStudent();
+        
+        // Absences cannot be updated or deleted (final for the trip)
+        allow update, delete: if false;
+      }
+    }
+  }
+}
