@@ -1,18 +1,104 @@
-rules_version='2'
+rules_version='2';
 
 service cloud.firestore {
   match /databases/{database}/documents {
-    match /{document=**} {
-      // This rule allows anyone with your database reference to view, edit,
-      // and delete all data in your database. It is useful for getting
-      // started, but it is configured to expire after 30 days because it
-      // leaves your app open to attackers. At that time, all client
-      // requests to your database will be denied.
-      //
-      // Make sure to write security rules for your app before that time, or
-      // else all client requests to your database will be denied until you
-      // update your rules.
-      allow read, write: if request.time < timestamp.date(2026, 2, 7);
+    
+    // ============================================
+    // HELPER FUNCTIONS
+    // ============================================
+    
+    // Check if the user is authenticated
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    // Check if the user is accessing their own document
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+    
+    // Get the current user's role from their profile
+    function getUserRole() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role;
+    }
+    
+    // Check if user is a driver
+    function isDriver() {
+      return isAuthenticated() && getUserRole() == 'driver';
+    }
+    
+    // Check if user is a student/passenger
+    function isStudent() {
+      return isAuthenticated() && getUserRole() == 'student';
+    }
+    
+    // ============================================
+    // USER PROFILES: users/{uid}
+    // ============================================
+    match /users/{userId} {
+      // Users can read their own profile
+      // Drivers can read passenger profiles for their bus
+      allow read: if isOwner(userId) || isDriver();
+      
+      // Users can only write to their own profile
+      allow write: if isOwner(userId);
+    }
+    
+    // ============================================
+    // BUSES: buses/{busId}
+    // ============================================
+    match /buses/{busId} {
+      // All authenticated users can read bus info (routes, stops)
+      allow read: if isAuthenticated();
+      
+      // Only drivers can update bus data (activeTripId)
+      allow update: if isDriver();
+      
+      // Bus creation/deletion requires admin (not implemented yet)
+      allow create, delete: if false;
+    }
+    
+    // ============================================
+    // TRIPS: trips/{tripId}
+    // ============================================
+    match /trips/{tripId} {
+      // All authenticated users can read trip data
+      allow read: if isAuthenticated();
+      
+      // Only drivers can create and update trips
+      allow create, update: if isDriver();
+      
+      // Trips are never deleted (historical record)
+      allow delete: if false;
+      
+      // ============================================
+      // WAIT REQUESTS: trips/{tripId}/waitRequests/{uid}
+      // ============================================
+      match /waitRequests/{requestId} {
+        // Drivers can read all wait requests
+        // Passengers can read their own wait requests
+        allow read: if isDriver() || isOwner(requestId);
+        
+        // Passengers can create/update their own wait requests
+        allow create, update: if isStudent() && isOwner(requestId);
+        
+        // Wait requests are not deleted within a trip
+        allow delete: if false;
+      }
+      
+      // ============================================
+      // ABSENCES: trips/{tripId}/absences/{uid}
+      // ============================================
+      match /absences/{absenceId} {
+        // Drivers can read all absences
+        // Passengers can read their own absences
+        allow read: if isDriver() || isOwner(absenceId);
+        
+        // Passengers can create their own absence record
+        // Once marked, absences cannot be updated (final for the trip)
+        allow create: if isStudent() && isOwner(absenceId);
+        allow update, delete: if false;
+      }
     }
   }
 }
