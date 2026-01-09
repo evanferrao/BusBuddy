@@ -28,20 +28,35 @@ export interface Location {
 // ============================================
 // FIRESTORE DATA MODEL (Per Specification)
 // ============================================
+//
+// Architecture Overview:
+// 1. routes/{routeId} (alias: buses/{busId}) - Static route data with stops
+// 2. users/{uid} - User profiles with role and bus assignment
+// 3. trips/{tripId} - Live trip state
+// 4. trips/{tripId}/waitRequests/{uid} - Wait request documents
+// 5. trips/{tripId}/absences/{uid} - Absence documents
+//
+// Key Principles:
+// - Store only atomic facts (never computed summaries)
+// - All totals, yes/no states, and colors are derived client-side
+// - Wait requests and absences are trip-scoped
+// ============================================
 
 // User profile stored in Firestore users/{uid}
+// Per spec: Individual passenger assignment replaces "names of kids per stop"
 export interface UserProfile {
   uid: string;
   email: string;
   displayName: string;
   role: UserRole;
-  busId: string;                    // Bus assigned to user
+  busId: string;                    // Bus assigned to user (maps to Bus.busId)
   preferredStopId?: string;         // Passengers only - their pickup stop
   createdAt: number;
   updatedAt: number;
 }
 
-// Bus stop definition (static, stored in buses collection)
+// Bus stop definition (static, stored in routes/buses collection)
+// Per spec: Part of the static route data loaded once
 export interface BusStopDefinition {
   stopId: string;
   name: string;
@@ -50,7 +65,17 @@ export interface BusStopDefinition {
   scheduledTime: string;            // e.g., "07:45"
 }
 
+// Route document stored in Firestore routes/{routeId}
+// Per spec: This is the "Main Table" equivalent with static stop definitions
+// Note: In current implementation, we use "buses" collection which serves the same purpose
+export interface Route {
+  routeId: string;
+  busNo: string;                    // Bus number for display
+  stops: BusStopDefinition[];       // Ordered list of stops with times and locations
+}
+
 // Bus document stored in Firestore buses/{busId}
+// This extends the Route concept with operational data (driver, active trip)
 export interface Bus {
   busId: string;
   busNumber: string;                // e.g., "MH-01-1234"
@@ -63,6 +88,8 @@ export interface Bus {
 export type TripStatus = 'IN_TRANSIT' | 'AT_STOP';
 
 // Trip document stored in Firestore trips/{tripId}
+// Per spec: Live data that changes during a trip
+// tripId format: trip_{busId}_{YYYY_MM_DD}
 export interface Trip {
   tripId: string;
   busId: string;
@@ -79,6 +106,8 @@ export interface Trip {
 }
 
 // Wait request stored in trips/{tripId}/waitRequests/{uid}
+// Per spec: Atomic fact - "This kid pressed wait"
+// Document ID is the passenger's UID to prevent duplicates
 export interface WaitRequest {
   passengerId: string;
   stopId: string;
@@ -86,6 +115,9 @@ export interface WaitRequest {
 }
 
 // Absence stored in trips/{tripId}/absences/{uid}
+// Per spec: Atomic fact - "This kid marked absent"
+// Document ID is the passenger's UID to prevent duplicates
+// Once created, cannot be modified (absence is final for the trip)
 export interface Absence {
   passengerId: string;
   stopId: string;
@@ -95,20 +127,35 @@ export interface Absence {
 // ============================================
 // STOP COLOR LOGIC (Derived Client-Side)
 // ============================================
+//
+// Per spec: Colors are NEVER stored in the database.
+// They are computed client-side from timestamps and counts.
+//
+// Computation Priority Order:
+// 1. GREY – all passengers at stop are absent → can skip
+// 2. RED – standard waiting window (0-5 min)
+// 3. YELLOW – extended wait due to requests (5-7 min with wait requests)
+// 4. GREEN – in transit or stop passed
+//
+// Time Windows (in seconds):
+// - RED_DURATION: 300 (5 minutes)
+// - YELLOW_DURATION: 420 (7 minutes, only if wait requests exist)
+// ============================================
 
 // Stop colors - derived on client, NEVER stored in database
 export type StopColor = 'GREY' | 'RED' | 'YELLOW' | 'GREEN';
 
 // Stop state for driver UI (computed client-side)
+// Combines static stop info with dynamic trip state
 export interface StopState {
   stopId: string;
   name: string;
-  color: StopColor;
-  elapsedSeconds: number;           // Time since arrival
-  waitRequestCount: number;         // Number of wait requests
-  totalPassengers: number;          // Total passengers at stop
-  absentCount: number;              // Number marked absent
-  allAbsent: boolean;               // True if all passengers absent
+  color: StopColor;                 // Computed from timestamps + counts
+  elapsedSeconds: number;           // Time since arrival at this stop
+  waitRequestCount: number;         // COUNT(waitRequests where stopId == this)
+  totalPassengers: number;          // COUNT(users where preferredStopId == this)
+  absentCount: number;              // COUNT(absences where stopId == this)
+  allAbsent: boolean;               // True if absentCount == totalPassengers
 }
 
 // ============================================
